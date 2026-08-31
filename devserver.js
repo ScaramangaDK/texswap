@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { getInstall } from './core/scanner.js';
+import { getInstall, setModChoice } from './core/scanner.js';
 import { flatImage, parseColor } from './core/gen.js';
 import { encodePng } from './core/thumbs.js';
 
@@ -45,6 +45,9 @@ function scanResult(inst) {
     root: inst.root,
     gameDirs: inst.gameDirs,
     writeDir: inst.writeDir,
+    game: inst.game,
+    mods: inst.mods,
+    activeMod: inst.activeMod,
     sources: inst.fs.describeSources(),
     warnings: inst.fs.warnings,
     hasPalette: Boolean(inst.palette),
@@ -105,6 +108,11 @@ async function handleApi(req, url, res) {
       case '/api/texdims': {
         if (!Array.isArray(body.names)) return json(res, 400, { error: 'need names[]' });
         return json(res, 200, { dims: inst.texDims(body.names.map(String), lowRes) });
+      }
+      case '/api/setmod': {
+        setModChoice(body.dir || DEFAULT_DIR, body.mod || null);
+        getInstall(body.dir || DEFAULT_DIR, true); // fresh install, async rescan
+        return json(res, 200, { ok: true });
       }
       case '/api/missingfix': {
         try {
@@ -169,11 +177,11 @@ async function handleApi(req, url, res) {
         if (!body.map || !/^[a-z0-9_.-]+$/i.test(body.map)) {
           return json(res, 400, { error: 'bad map name' });
         }
-        const exe = ['q2pro.exe', 'aqtion.exe']
+        const exe = ['q2pro.exe', 'aqtion.exe', 'quake2.exe']
           .map(n => path.join(inst.root, n))
           .find(p => fs.existsSync(p));
-        if (!exe) return json(res, 400, { error: 'no q2pro.exe / aqtion.exe found in ' + inst.root });
-        const args = ['+map', body.map];
+        if (!exe) return json(res, 400, { error: 'no q2pro.exe / aqtion.exe / quake2.exe found in ' + inst.root });
+        const args = inst.activeMod ? ['+set', 'game', inst.activeMod, '+map', body.map] : ['+map', body.map];
         if (body.dry) return json(res, 200, { ok: true, exe, args, launched: false });
         try {
           const child = spawn(exe, args, { cwd: inst.root, detached: true, stdio: 'ignore' });

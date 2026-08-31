@@ -202,6 +202,7 @@ async function rescan(refresh) {
   if (!state.scan.hasPalette) warn.push('colormap.pcx not found — .wal textures cannot be decoded.');
   warn.push(...state.scan.warnings);
   renderWarnings(warn);
+  renderGameBadge();
   renderMapList();
   renderHook();
   $('mapSearch').placeholder = `Search ${state.scan.maps.length} maps…`;
@@ -209,6 +210,43 @@ async function rescan(refresh) {
     `${state.scan.maps.length} maps in ${state.scan.gameDirs.join(' + ')} — pick one on the left.`;
   if (state.activeMap && state.scan.maps.some(m => m.name === state.activeMap)) {
     selectMap(state.activeMap);
+  }
+}
+
+// Which game this install is, plus the Q2 mod switcher (a Q2 install runs
+// ONE mod layered over baseq2; switching re-scans with that layering).
+function renderGameBadge() {
+  const badge = $('gameBadge');
+  const sel = $('modSel');
+  const s = state.scan;
+  if (!s) { badge.classList.add('hidden'); sel.classList.add('hidden'); return; }
+  const label = s.game === 'aq2' ? 'AQ2 / AQtion' : s.game === 'q2' ? 'Quake 2' : null;
+  badge.textContent = label || '';
+  badge.classList.toggle('hidden', !label);
+  const showSel = s.game === 'q2' && (s.mods || []).length > 0;
+  sel.classList.toggle('hidden', !showSel);
+  if (showSel) {
+    sel.textContent = '';
+    const base = document.createElement('option');
+    base.value = '';
+    base.textContent = 'baseq2 (no mod)';
+    sel.appendChild(base);
+    for (const m of s.mods) {
+      const o = document.createElement('option');
+      o.value = m;
+      o.textContent = 'mod: ' + m;
+      sel.appendChild(o);
+    }
+    sel.value = s.activeMod || '';
+    sel.onchange = async () => {
+      try {
+        await apiPost('/api/setmod', { mod: sel.value || null });
+        toast(sel.value ? `Switched to mod "${sel.value}" (over baseq2)` : 'Switched to plain baseq2');
+        await rescan(false);
+      } catch (e) {
+        toast('Could not switch mod: ' + e.message, true);
+      }
+    };
   }
 }
 

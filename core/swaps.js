@@ -54,7 +54,7 @@ function cleanMissingFix(m) {
 }
 
 // Per-user data root: presets survive game reinstalls/deletions here.
-function appDataRoot() {
+export function appDataRoot() {
   const base = process.env.APPDATA || path.join(process.env.USERPROFILE || '.', '.config');
   return path.join(base, 'AQ2TextureSwapper');
 }

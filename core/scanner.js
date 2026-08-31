@@ -9,7 +9,7 @@ import { encodePng, resizeRgba } from './thumbs.js';
 import { flatImage } from './gen.js';
 import { makeThumbPng, resolveImage, sizeOf, TEXTURE_EXTS, TEXTURE_EXTS_LOW } from './thumbs.js';
 import { imageSize } from './decoders.js';
-import { SwapStore } from './swaps.js';
+import { SwapStore, appDataRoot } from './swaps.js';
 
 const SURF_SKY = 4;
 const SURF_NODRAW = 128;
@@ -34,28 +34,86 @@ function hasGameContent(dirAbs) {
   }
 }
 
-// Accepts either the install root (containing action/ and/or baseaq/) or a
-// game dir itself; returns { root, dirs } with dirs highest-priority first,
+// Accepts an install root or a game dir inside one; returns
+// { root, dirs, game, mods, activeMod } with dirs highest-priority first,
 // mirroring the engine's mod-over-base layering.
-export function detectInstall(inputDir) {
+// - AQ2/AQtion (action/baseaq present): unchanged fixed layering.
+// - Plain Quake 2 (baseq2): baseq2 alone, or a chosen mod layered on top
+//   (the engine runs ONE mod at a time via +set game <mod>).
+export function detectInstall(inputDir, mod = null) {
   const abs = path.resolve(inputDir);
   let root = abs;
-  if (GAME_DIR_ORDER.includes(path.basename(abs).toLowerCase())) {
+  const base = path.basename(abs).toLowerCase();
+  if (GAME_DIR_ORDER.includes(base)) {
     root = path.dirname(abs);
+  } else if (base !== 'baseq2' && hasGameContent(abs) &&
+      hasGameContent(path.join(path.dirname(abs), 'baseq2'))) {
+    // pointed at a mod dir inside a Q2 install: hop to the root, keep the mod
+    root = path.dirname(abs);
+    mod = mod || path.basename(abs);
   }
-  const dirs = GAME_DIR_ORDER.filter(d => hasGameContent(path.join(root, d)));
-  if (dirs.length) return { root, dirs };
+
+  const aq2Dirs = GAME_DIR_ORDER.filter(d => hasGameContent(path.join(root, d)));
+  if (aq2Dirs.includes('action') || aq2Dirs.includes('baseaq')) {
+    return { root, dirs: aq2Dirs, game: 'aq2', mods: [], activeMod: null };
+  }
+
+  if (hasGameContent(path.join(root, 'baseq2'))) {
+    let mods = [];
+    try {
+      mods = fs.readdirSync(root, { withFileTypes: true })
+        .filter(e => e.isDirectory() && e.name.toLowerCase() !== 'baseq2' &&
+          hasGameContent(path.join(root, e.name)))
+        .map(e => e.name)
+        .sort((a, b) => a.localeCompare(b, 'en'));
+    } catch { /* unreadable root: baseq2 alone */ }
+    const active = mod ? mods.find(m => m.toLowerCase() === String(mod).toLowerCase()) || null : null;
+    return {
+      root,
+      dirs: active ? [active, 'baseq2'] : ['baseq2'],
+      game: 'q2',
+      mods,
+      activeMod: active,
+    };
+  }
+
   if (hasGameContent(abs)) {
-    return { root: path.dirname(abs), dirs: [path.basename(abs)] };
+    return { root: path.dirname(abs), dirs: [path.basename(abs)], game: 'other', mods: [], activeMod: null };
   }
-  throw new Error('no AQ2 game content found at ' + inputDir);
+  throw new Error('no game content found at ' + inputDir);
+}
+
+// The chosen Q2 mod per install path, persisted in app-data so it survives
+// restarts without threading a parameter through every API call.
+function modChoiceFile() {
+  return path.join(appDataRoot(), 'modchoice.json');
+}
+function readModChoice(inputDir) {
+  try {
+    const m = JSON.parse(fs.readFileSync(modChoiceFile(), 'utf8'));
+    return m[path.resolve(inputDir).toLowerCase()] || null;
+  } catch {
+    return null;
+  }
+}
+export function setModChoice(inputDir, mod) {
+  let m = {};
+  try { m = JSON.parse(fs.readFileSync(modChoiceFile(), 'utf8')) || {}; } catch { /* fresh file */ }
+  const key = path.resolve(inputDir).toLowerCase();
+  if (mod) m[key] = mod;
+  else delete m[key];
+  fs.mkdirSync(appDataRoot(), { recursive: true });
+  fs.writeFileSync(modChoiceFile(), JSON.stringify(m, null, 2));
 }
 
 export class Install {
   constructor(inputDir) {
-    const { root, dirs } = detectInstall(inputDir);
+    const { root, dirs, game, mods, activeMod } = detectInstall(inputDir, readModChoice(inputDir));
     this.root = root;
     this.gameDirs = dirs;
+    this.game = game;
+    this.mods = mods;
+    this.activeMod = activeMod;
     this.writeDir = path.join(root, dirs[0]);
     this.fs = new GameFS(root, dirs);
     this.palette = this.#loadPalette();

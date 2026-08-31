@@ -12,8 +12,10 @@
   <header>
     <div id="hookArea"></div>
     <div class="dirbar">
-      <input id="dirInput" type="text" spellcheck="false" placeholder="Path to AQ2 install (root or game dir)">
-      <button id="browseBtn" title="Pick your AQ2 folder">Browse…</button>
+      <span id="gameBadge" class="gamebadge hidden"></span>
+      <select id="modSel" class="hidden" title="Which mod the game runs (layered over baseq2)"></select>
+      <input id="dirInput" type="text" spellcheck="false" placeholder="Path to your game install (root or game dir)">
+      <button id="browseBtn" title="Pick your game folder">Browse…</button>
       <button id="guideBtn" title="Setup and how to use the program">📄 Readme</button>
       <button id="rescanBtn" title="Rescan the install">Rescan</button>
     </div>
