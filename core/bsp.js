@@ -268,12 +268,9 @@ export function extractBspGeometry(buf) {
     }
     if (!valid) continue;
 
-    // lightmap block (style-0) dims from texel extents, 16 texels per luxel.
-    // warp/trans/alphatest surfaces render unlit in the engine's alpha pass —
-    // their baked lightmaps are often black (compiler saw them as inside walls)
-    const UNLIT = SURF_WARP | 16 | 32 | 33554432;
+    // lightmap block (style-0) dims from texel extents, 16 texels per luxel
     let lm = null;
-    if (lightofs >= 0 && ll.len > 0 && !(info.flags & UNLIT)) {
+    if (lightofs >= 0 && ll.len > 0) {
       let umin = Infinity, umax = -Infinity, vmin = Infinity, vmax = -Infinity;
       for (const v of poly) {
         if (v.tu < umin) umin = v.tu;
@@ -293,8 +290,10 @@ export function extractBspGeometry(buf) {
 
   // pass 2: shelf-pack lightmap blocks into one RGB atlas (1px padded)
   const ATLAS_W = 1024;
+  const MASKED_BITS = 8 | 16 | 32 | 33554432; // warp | trans33 | trans66 | alphatest
   const lit = facesOut.filter(f => f.lm).sort((a, b) => b.lm.h - a.lm.h);
-  let cx = 6, cy = 0, shelfH = 6; // (0,0)..(4,4) reserved as a white block
+  // (0,0)..(4,4) reserved white (unlit), (6,0)..(10,4) reserved mid-grey
+  let cx = 12, cy = 0, shelfH = 6;
   for (const f of lit) {
     const bw = f.lm.w + 2, bh = f.lm.h + 2;
     if (cx + bw > ATLAS_W) { cx = 0; cy += shelfH; shelfH = bh; }
@@ -306,8 +305,15 @@ export function extractBspGeometry(buf) {
   let atlasH = 4;
   for (let p2 = 4; p2 <= 8192; p2 *= 2) { if (p2 >= cy + shelfH) { atlasH = p2; break; } }
   const atlas = Buffer.alloc(ATLAS_W * atlasH * 3, 255);
+  for (let y = 0; y < 4 && y < atlasH; y++) {
+    for (let x = 6; x < 10; x++) {
+      const d = (y * ATLAS_W + x) * 3;
+      atlas[d] = atlas[d + 1] = atlas[d + 2] = 128;
+    }
+  }
   for (const f of lit) {
     const { w, h, ofs, ax, ay } = f.lm;
+    let lumSum = 0;
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const s = ll.ofs + ofs + (y * w + x) * 3;
@@ -315,24 +321,34 @@ export function extractBspGeometry(buf) {
         atlas[d] = buf[s];
         atlas[d + 1] = buf[s + 1];
         atlas[d + 2] = buf[s + 2];
+        lumSum += buf[s] + buf[s + 1] + buf[s + 2];
       }
     }
+    // masked overlays whose bake is essentially black (compiler lit them as
+    // inside the wall) fall back to neutral grey instead of glowing or vanishing
+    const avg = lumSum / (w * h * 3);
+    if ((f.flags & MASKED_BITS) && avg < 8) f.useGrey = true;
   }
 
-  // pass 3: triangulate into per-texture groups with texture + lightmap UVs
+  // pass 3: triangulate into groups keyed by texture + surface type, so the
+  // same texture used as plain wall AND masked overlay gets separate materials
   const groups = new Map();
   const whiteU = 2 / ATLAS_W, whiteV = 2 / atlasH;
+  const greyU = 8 / ATLAS_W, greyV = 2 / atlasH;
   for (const f of facesOut) {
-    let g = groups.get(f.name);
+    const key = f.name + '|' + (f.flags & MASKED_BITS);
+    let g = groups.get(key);
     if (!g) {
       g = { name: f.name, flags: 0, positions: [], uvs: [], luvs: [] };
-      groups.set(f.name, g);
+      groups.set(key, g);
     }
     g.flags |= f.flags;
     const pushVert = v => {
       g.positions.push(Math.round(v.pt[0] * 10) / 10, Math.round(v.pt[1] * 10) / 10, Math.round(v.pt[2] * 10) / 10);
       g.uvs.push(Math.round(v.tu * 100) / 100, Math.round(v.tv * 100) / 100);
-      if (f.lm) {
+      if (f.useGrey) {
+        g.luvs.push(greyU, greyV);
+      } else if (f.lm) {
         const lu = (f.lm.ax + (v.tu / 16 - f.lm.smin) + 0.5) / ATLAS_W;
         const lv = (f.lm.ay + (v.tv / 16 - f.lm.tmin) + 0.5) / atlasH;
         g.luvs.push(Math.round(lu * 100000) / 100000, Math.round(lv * 100000) / 100000);
