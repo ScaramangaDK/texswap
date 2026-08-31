@@ -54,14 +54,30 @@
 ::selection { background: var(--accent-soft); }
 
 body {
-  background: var(--bg0);
   color: var(--text);
   font: 14px/1.5 var(--font);
   height: 100vh;
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
+  /* the stone frame: the app sits chiselled into concrete */
+  padding: 14px;
+  background:
+    linear-gradient(rgba(16, 19, 26, 0.45), rgba(16, 19, 26, 0.6)),
+    var(--concrete);
+  background-size: auto, 300px;
 }
+
+#app {
+  height: 100%;
+  display: grid;
+  grid-template-columns: 272px 1fr;
+  grid-template-rows: auto auto 1fr auto;
+  background: var(--bg0);
+  border: 1px solid rgba(0, 0, 0, 0.7);
+  border-radius: var(--r-l);
+  overflow: hidden;
+  box-shadow: var(--shadow-2), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+main { display: contents; }
 
 .mono { font-family: var(--mono); }
 .hidden { display: none !important; }
@@ -197,6 +213,8 @@ input[type="color"] {
    header
    ============================================================ */
 header {
+  grid-column: 2;
+  grid-row: 1;
   display: flex;
   align-items: center;
   gap: 18px;
@@ -263,9 +281,9 @@ h1 { font-size: 16px; font-weight: 650; letter-spacing: 0.01em; }
   white-space: nowrap;
 }
 .hookchip.ok {
-  color: var(--good);
-  border-color: rgba(85, 217, 138, 0.35);
-  background: var(--good-soft);
+  color: var(--accent-hi);
+  border-color: rgba(255, 140, 26, 0.4);
+  background: var(--accent-soft);
 }
 
 .dirbar {
@@ -285,6 +303,8 @@ h1 { font-size: 16px; font-weight: 650; letter-spacing: 0.01em; }
 
 /* ---------- banner ---------- */
 .banner {
+  grid-column: 2;
+  grid-row: 2;
   background: var(--bad-soft);
   color: #ffc9c9;
   padding: 9px 18px;
@@ -294,13 +314,12 @@ h1 { font-size: 16px; font-weight: 650; letter-spacing: 0.01em; }
 }
 
 /* ============================================================
-   layout
+   layout: sidebar owns the full-height left column (logo in the corner)
    ============================================================ */
-main { flex: 1; display: flex; min-height: 0; }
-
 #sidebar {
-  width: 272px;
-  min-width: 272px;
+  grid-column: 1;
+  grid-row: 1 / span 3;
+  min-height: 0;
   background: var(--bg1);
   border-right: 1px solid var(--line);
   display: flex;
@@ -320,14 +339,14 @@ main { flex: 1; display: flex; min-height: 0; }
   padding: 9px 11px;
   border-radius: var(--r-s);
   cursor: pointer;
-  border-left: 2px solid transparent;
-  transition: background 0.12s ease;
+  border: 1px solid transparent;
+  transition: background 0.12s ease, border-color 0.12s ease;
 }
 #mapList li + li { margin-top: 1px; }
 #mapList li:hover { background: var(--bg2); }
 #mapList li.active {
   background: var(--bg2);
-  border-left-color: var(--accent);
+  border-color: var(--accent);
   box-shadow: var(--glow-soft);
 }
 #mapList .mname {
@@ -348,7 +367,14 @@ main { flex: 1; display: flex; min-height: 0; }
 #mapList .msrc { color: var(--faint); font-size: 11px; margin-top: 1px; }
 #mapList li.err .mname { color: var(--bad); }
 
-#content { flex: 1; overflow-y: auto; padding: 20px 24px; background: var(--bg0); }
+#content {
+  grid-column: 2;
+  grid-row: 3;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 24px;
+  background: var(--bg0);
+}
 .empty {
   color: var(--dim);
   padding: 84px 40px;
@@ -590,6 +616,8 @@ main { flex: 1; display: flex; min-height: 0; }
 
 /* ---------- footer ---------- */
 footer {
+  grid-column: 1 / -1;
+  grid-row: 4;
   padding: 8px 18px;
   color: var(--faint);
   font-size: 11.5px;
