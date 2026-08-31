@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AQ2 Texture Swapper</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="logo">AQ2</span>
+      <div>
+        <h1>Texture Swapper</h1>
+        <span class="tagline">milestone 1 — map &amp; texture scanner</span>
+      </div>
+    </div>
+    <div class="dirbar">
+      <input id="dirInput" type="text" spellcheck="false" placeholder="Path to game dir (baseaq)">
+      <button id="rescanBtn" title="Rescan the game directory">Rescan</button>
+    </div>
+  </header>
+
+  <div id="banner" class="banner hidden"></div>
+
+  <main>
+    <aside id="sidebar">
+      <div class="sidehead">
+        <input id="mapSearch" type="search" placeholder="Filter maps…">
+        <span id="mapCount" class="count"></span>
+      </div>
+      <ul id="mapList"></ul>
+    </aside>
+
+    <section id="content">
+      <div id="empty" class="empty">
+        <p>Scanning…</p>
+      </div>
+      <div id="mapView" class="hidden">
+        <div class="maphead">
+          <div class="maptitle">
+            <h2 id="mapName"></h2>
+            <span id="mapTitle" class="subtitle"></span>
+            <span id="mapMeta" class="meta"></span>
+          </div>
+          <div class="skycard" id="skyCard">
+            <img id="skyThumb" alt="skybox">
+            <div>
+              <span class="skylabel">skybox</span>
+              <span id="skyName"></span>
+            </div>
+          </div>
+        </div>
+        <div class="controls">
+          <input id="texSearch" type="search" placeholder="Filter textures…">
+          <select id="sortSel">
+            <option value="area">Sort: most visible area</option>
+            <option value="faces">Sort: most faces</option>
+            <option value="name">Sort: name</option>
+          </select>
+          <label class="check"><input id="showUtility" type="checkbox"> show utility/sky surfaces</label>
+          <span id="texCount" class="count"></span>
+        </div>
+        <div id="grid" class="grid"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    Swapping, presets &amp; softlink export arrive in the next milestone — this build scans and browses.
+  </footer>
+
+  <script src="main.js"></script>
+</body>
+</html>

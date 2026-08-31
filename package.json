@@ -1,0 +1,14 @@
+{
+  "name": "aq2textureswapper",
+  "version": "0.1.0",
+  "description": "Swap and preview AQ2/AQtion map textures via q2pro softlinks",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "node devserver.js"
+  },
+  "dependencies": {
+    "jpeg-js": "^0.4.4",
+    "pngjs": "^7.0.0"
+  }
+}
