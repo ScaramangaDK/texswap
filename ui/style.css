@@ -815,15 +815,38 @@ footer code { color: var(--accent-hi); font-family: var(--mono); }
 .palswatch.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .scbtn {
-  padding: 4px 11px;
+  min-width: 58px;
+  padding: 7px 0;
+  text-align: center;
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: 13.5px;
 }
 .scbtn.sel {
   border-color: var(--accent);
   color: var(--accent-hi);
   box-shadow: var(--glow-soft);
 }
+.scalerow { display: flex; gap: 8px; }
+
+/* missing-textures dialog: aligned label column for the control rows */
+.mfgrid {
+  display: grid;
+  grid-template-columns: 104px 1fr;
+  gap: 14px 16px;
+  align-items: center;
+  margin: 14px 0 6px;
+}
+.mfgrid .stylerow { margin: 0; }
+.mflbl {
+  color: var(--faint);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.mfapply { display: flex; align-items: center; gap: 14px; }
+.palrow { align-items: center; margin-bottom: 8px; }
+.palrow .count { margin-left: 4px; }
 
 .mfenable {
   display: flex;

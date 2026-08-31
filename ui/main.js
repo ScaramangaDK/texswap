@@ -1060,10 +1060,10 @@ async function renderFlatTab(t) {
       <div class="sectionhead">Pattern color &amp; size</div>
       <div class="flatrow">
         <span class="count">Pattern size:</span>
-        <button class="scbtn" data-sc="0.5">0.5×</button>
-        <button class="scbtn" data-sc="1">1×</button>
-        <button class="scbtn" data-sc="2">2×</button>
-        <button class="scbtn" data-sc="4">4×</button>
+        <button class="scbtn" data-sc="0.5">0.5x</button>
+        <button class="scbtn" data-sc="1">1x</button>
+        <button class="scbtn" data-sc="2">2x</button>
+        <button class="scbtn" data-sc="4">4x</button>
       </div>
       <div class="flatrow">
         <label><input type="checkbox" id="patAuto"> auto (darker shade of the base)</label>
@@ -1376,34 +1376,37 @@ async function openMissingFix() {
     <div class="mbody">
       <p class="mnote">Maps often use textures your install doesn't have. Pick a stand-in style —
       the app shows it on every missing texture, and with the fix enabled it is applied
-      <b>in game across all maps</b> too, so broken maps get a clean uniform look.
-      Textures you swap yourself always win over this.</p>
-      <div class="stylerow" id="mfStyles"></div>
-      <div class="flatrow" id="mfScaleRow">
-        <span class="count">Pattern size:</span>
-        <button class="scbtn" data-sc="0.5">0.5×</button>
-        <button class="scbtn" data-sc="1">1×</button>
-        <button class="scbtn" data-sc="2">2×</button>
-        <button class="scbtn" data-sc="4">4×</button>
-      </div>
-      <div class="flatrow">
-        <img id="mfPreview" class="flatpreview" alt="preview">
-        <label class="mfenable" title="Without this, the style only shows in the app - the game is untouched">
-          <input type="checkbox" id="mfEnabled"> Apply in game (all maps)</label>
-        <button class="primary" id="mfSave">Save</button>
+      <b>in game across all maps</b> too. Textures you swap yourself always win over this.</p>
+      <div class="mfgrid">
+        <span class="mflbl">Style</span>
+        <div class="stylerow" id="mfStyles"></div>
+        <span class="mflbl" id="mfScaleLbl">Pattern size</span>
+        <div class="scalerow" id="mfScaleRow">
+          <button class="scbtn" data-sc="0.5">0.5x</button>
+          <button class="scbtn" data-sc="1">1x</button>
+          <button class="scbtn" data-sc="2">2x</button>
+          <button class="scbtn" data-sc="4">4x</button>
+        </div>
+        <span class="mflbl">Preview</span>
+        <div class="mfapply">
+          <img id="mfPreview" class="flatpreview" alt="preview">
+          <label class="mfenable" title="Without this, the style only shows in the app - the game is untouched">
+            <input type="checkbox" id="mfEnabled"> Apply in game (all maps)</label>
+          <button class="primary" id="mfSave">Save</button>
+        </div>
       </div>
       <div class="sectionhead">Base color</div>
-      <div class="flatrow">
+      <div class="flatrow palrow">
         <label>Custom: <input type="color" id="mfColor" value="${mf.color}"></label>
+        <span class="count">…or pick from the Quake 2 palette below</span>
       </div>
-      <p class="mnote" style="margin:6px 0 4px">…or pick from the Quake 2 palette:</p>
       <div class="palgrid" id="mfPalBase"></div>
       <div class="sectionhead">Pattern color</div>
-      <div class="flatrow">
+      <div class="flatrow palrow">
         <label><input type="checkbox" id="mfAuto"> auto (darker shade of the base)</label>
         <label>Custom: <input type="color" id="mfColor2"></label>
+        <span class="count">…or pick from the palette below</span>
       </div>
-      <p class="mnote" style="margin:6px 0 4px">…or pick from the Quake 2 palette:</p>
       <div class="palgrid" id="mfPal"></div>
     </div>
   `);
@@ -1428,6 +1431,7 @@ async function openMissingFix() {
     color2Input.value = mf.color2 || autoShade();
     $('mfPreview').src = thumbUrl(thumbParams(mf.style, 96));
     $('mfScaleRow').classList.toggle('hidden', mf.style === 'solid');
+    $('mfScaleLbl').classList.toggle('hidden', mf.style === 'solid');
     $('mfScaleRow').querySelectorAll('.scbtn').forEach(x =>
       x.classList.toggle('sel', Number(x.dataset.sc) === (mf.scale || 1)));
     $('mfPal').querySelectorAll('.palswatch').forEach(x =>
