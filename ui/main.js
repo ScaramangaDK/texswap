@@ -112,6 +112,37 @@ function reportWritten(result) {
   if (parts.length) toast(parts.join(' · '));
 }
 
+// warnings the user has dismissed stay hidden until their text changes
+// (a broken archive would otherwise greet them on every single start)
+function hiddenWarnings() {
+  try { return new Set(JSON.parse(localStorage.getItem('aq2ts.hiddenWarnings') || '[]')); } catch { return new Set(); }
+}
+function renderWarnings(list) {
+  const b = $('banner');
+  const hidden = hiddenWarnings();
+  const show = list.filter(w => !hidden.has(w));
+  if (!show.length) { b.classList.add('hidden'); return; }
+  b.textContent = '';
+  b.classList.remove('hidden');
+  for (const w of show) {
+    const row = document.createElement('div');
+    row.className = 'warnrow';
+    const span = document.createElement('span');
+    span.textContent = w;
+    const x = document.createElement('button');
+    x.className = 'warnclose';
+    x.textContent = '✕';
+    x.title = 'Hide this warning - it stays hidden unless the message changes';
+    x.addEventListener('click', () => {
+      const h = [...hiddenWarnings().add(w)].slice(-50);
+      localStorage.setItem('aq2ts.hiddenWarnings', JSON.stringify(h));
+      renderWarnings(list);
+    });
+    row.append(span, x);
+    b.appendChild(row);
+  }
+}
+
 function showBanner(msg) {
   const b = $('banner');
   if (!msg) { b.classList.add('hidden'); return; }
@@ -160,7 +191,7 @@ async function rescan(refresh) {
   const warn = [];
   if (!state.scan.hasPalette) warn.push('colormap.pcx not found — .wal textures cannot be decoded.');
   warn.push(...state.scan.warnings);
-  showBanner(warn.length ? warn.join('\n') : null);
+  renderWarnings(warn);
   renderMapList();
   renderHook();
   $('mapSearch').placeholder = `Search ${state.scan.maps.length} maps…`;
