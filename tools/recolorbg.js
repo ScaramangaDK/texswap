@@ -8,10 +8,14 @@ import { encodePng } from '../core/thumbs.js';
 
 const [src, dst, hex, thr] = process.argv.slice(2);
 const threshold = Number(thr) || 30;
-const m = /^#?([0-9a-f]{6})$/i.exec(hex);
-if (!m) throw new Error('bad hex color');
-const v = parseInt(m[1], 16);
-const [tr, tg, tb] = [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+const transparent = hex === 'transparent';
+let tr = 0, tg = 0, tb = 0;
+if (!transparent) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) throw new Error('bad hex color');
+  const v = parseInt(m[1], 16);
+  [tr, tg, tb] = [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
 
 const img = decodeImage(fs.readFileSync(src), path.extname(src).toLowerCase());
 const { width: w, height: h, data } = img;
@@ -25,7 +29,11 @@ while (stack.length) {
   const i = stack.pop();
   if (seen[i] || !dark(i)) continue;
   seen[i] = 1;
-  data[i * 4] = tr; data[i * 4 + 1] = tg; data[i * 4 + 2] = tb; data[i * 4 + 3] = 255;
+  if (transparent) {
+    data[i * 4 + 3] = 0;
+  } else {
+    data[i * 4] = tr; data[i * 4 + 1] = tg; data[i * 4 + 2] = tb; data[i * 4 + 3] = 255;
+  }
   filled++;
   const x = i % w, y = (i / w) | 0;
   if (x > 0) stack.push(i - 1);
