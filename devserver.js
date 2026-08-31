@@ -226,8 +226,19 @@ async function handleApi(req, url, res) {
     case '/api/defaults':
       return json(res, 200, { dir: fs.existsSync(DEFAULT_DIR) ? DEFAULT_DIR : '' });
 
-    case '/api/scan':
-      return json(res, 200, scanResult(getInstall(dir, q.get('refresh') === '1')));
+    case '/api/scan': {
+      const inst = getInstall(dir, q.get('refresh') === '1');
+      if (!inst.mapsCache) {
+        // first scan of a big install takes 10s+: run it async and let the
+        // UI poll for progress instead of hanging on a dead request
+        if (!inst.scanPromise) {
+          inst.scanPromise = inst.scanMapsAsync().catch(e => { inst.scanError = e.message; });
+        }
+        if (inst.scanError) return json(res, 500, { error: inst.scanError });
+        return json(res, 200, { scanning: true, progress: inst.scanProgress || { done: 0, total: 0 } });
+      }
+      return json(res, 200, scanResult(inst));
+    }
 
     case '/api/map': {
       const name = q.get('name');

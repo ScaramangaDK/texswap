@@ -1,0 +1,68 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Ralle's AQ2 Texture Swapper</title>
+<style>
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #0e1116;
+    color: #94a0b8;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .wrap { text-align: center; }
+  .wrap img {
+    width: 280px;
+    max-width: 70vw;
+    filter: drop-shadow(0 0 24px rgba(255, 140, 26, 0.25));
+  }
+  .msg {
+    margin-top: 22px;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+  }
+  .dots::after {
+    content: '';
+    animation: dots 1.4s steps(4, end) infinite;
+  }
+  @keyframes dots {
+    0% { content: ''; }
+    25% { content: '.'; }
+    50% { content: '..'; }
+    75% { content: '...'; }
+  }
+  .bar {
+    margin: 16px auto 0;
+    width: 220px;
+    height: 3px;
+    background: #232c3e;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .bar span {
+    display: block;
+    height: 100%;
+    width: 40%;
+    background: #ff8c1a;
+    border-radius: 2px;
+    animation: slide 1.2s ease-in-out infinite alternate;
+  }
+  @keyframes slide {
+    from { transform: translateX(-60%); }
+    to { transform: translateX(340%); }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <img src="logo2-ui.png" alt="Ralle's AQ2 Texture Swapper">
+    <div class="msg dots">Starting up</div>
+    <div class="bar"><span></span></div>
+  </div>
+</body>
+</html>

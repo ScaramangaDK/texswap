@@ -95,27 +95,53 @@ export class Install {
       .find(p => path.basename(p, '.bsp') === mapName.toLowerCase());
   }
 
+  #mapEntryFor(p) {
+    const name = path.basename(p, '.bsp');
+    const parsed = this.#parseMap(p);
+    if (parsed.error) {
+      return { name, file: p, source: this.fs.sourceOf(p), error: parsed.error };
+    }
+    return {
+      name,
+      file: p,
+      source: this.fs.sourceOf(p),
+      title: cleanTitle(parsed.worldspawn.message),
+      sky: parsed.worldspawn.sky || null,
+      extended: parsed.extended,
+      textureCount: parsed.textures.length,
+      swapCount: this.swaps.swapCount(name),
+    };
+  }
+
   listMaps() {
+    if (this.mapsCache) {
+      // swap counts move between scans; everything else is immutable
+      for (const m of this.mapsCache) m.swapCount = this.swaps.swapCount(m.name);
+      return this.mapsCache;
+    }
+    const maps = this.fs.list(x => x.startsWith('maps/') && x.endsWith('.bsp'))
+      .map(p => this.#mapEntryFor(p));
+    maps.sort((a, b) => a.name.localeCompare(b.name, 'en'));
+    this.mapsCache = maps;
+    return maps;
+  }
+
+  // Same scan as listMaps, but yielding to the event loop so a status
+  // endpoint can report progress while the first scan runs (a big install
+  // takes 10s+ and the UI should never look frozen).
+  async scanMapsAsync() {
+    if (this.mapsCache) return this.mapsCache;
+    const files = this.fs.list(x => x.startsWith('maps/') && x.endsWith('.bsp'));
+    this.scanProgress = { done: 0, total: files.length };
     const maps = [];
-    for (const p of this.fs.list(x => x.startsWith('maps/') && x.endsWith('.bsp'))) {
-      const name = path.basename(p, '.bsp');
-      const parsed = this.#parseMap(p);
-      if (parsed.error) {
-        maps.push({ name, file: p, source: this.fs.sourceOf(p), error: parsed.error });
-        continue;
-      }
-      maps.push({
-        name,
-        file: p,
-        source: this.fs.sourceOf(p),
-        title: cleanTitle(parsed.worldspawn.message),
-        sky: parsed.worldspawn.sky || null,
-        extended: parsed.extended,
-        textureCount: parsed.textures.length,
-        swapCount: this.swaps.swapCount(name),
-      });
+    for (const p of files) {
+      maps.push(this.#mapEntryFor(p));
+      this.scanProgress.done++;
+      if (this.scanProgress.done % 20 === 0) await new Promise(r => setImmediate(r));
     }
     maps.sort((a, b) => a.name.localeCompare(b.name, 'en'));
+    this.mapsCache = maps;
+    this.scanProgress = null;
     return maps;
   }
 

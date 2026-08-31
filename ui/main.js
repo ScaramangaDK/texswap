@@ -179,7 +179,17 @@ async function rescan(refresh) {
   $('mapView').classList.add('hidden');
   $('empty').firstElementChild.textContent = 'Scanning ' + state.dir + ' …';
   try {
-    state.scan = await apiGet('/api/scan', refresh ? { refresh: 1 } : {});
+    let r = await apiGet('/api/scan', refresh ? { refresh: 1 } : {});
+    while (r.scanning) {
+      const p = r.progress || {};
+      $('empty').firstElementChild.textContent = p.total
+        ? `Scanning maps… ${p.done} / ${p.total}`
+        : 'Scanning ' + state.dir + ' …';
+      $('mapSearch').placeholder = p.total ? `Scanning… ${p.done} / ${p.total}` : 'Scanning…';
+      await new Promise(res => setTimeout(res, 400));
+      r = await apiGet('/api/scan', {});
+    }
+    state.scan = r;
   } catch (e) {
     state.scan = null;
     renderMapList();

@@ -20,9 +20,8 @@ async function serverReady(timeoutMs = 8000) {
 }
 
 app.whenReady().then(async () => {
-  await import('./devserver.js');
-  await serverReady();
-
+  // window first, with a branded splash, so launch never looks frozen -
+  // the server import and its port bind happen behind it
   const win = new BrowserWindow({
     width: 1520,
     height: 960,
@@ -38,7 +37,11 @@ app.whenReady().then(async () => {
     if (url.startsWith('http') && !url.startsWith(URL_)) shell.openExternal(url);
     return { action: 'deny' };
   });
-  win.loadURL(URL_);
+  win.loadFile(path.join(ROOT, 'ui', 'splash.html'));
+
+  await import('./devserver.js');
+  await serverReady();
+  if (!win.isDestroyed()) win.loadURL(URL_);
 });
 
 app.on('window-all-closed', () => app.quit());
