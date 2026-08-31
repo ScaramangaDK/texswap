@@ -3,6 +3,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { getInstall } from './core/scanner.js';
 import { flatImage, parseColor } from './core/gen.js';
@@ -146,6 +147,24 @@ async function handleApi(req, url, res) {
       case '/api/hook': {
         const status = inst.swaps.installHook();
         return json(res, 200, { ok: true, hook: status });
+      }
+      case '/api/launchgame': {
+        if (!body.map || !/^[a-z0-9_.-]+$/i.test(body.map)) {
+          return json(res, 400, { error: 'bad map name' });
+        }
+        const exe = ['q2pro.exe', 'aqtion.exe']
+          .map(n => path.join(inst.root, n))
+          .find(p => fs.existsSync(p));
+        if (!exe) return json(res, 400, { error: 'no q2pro.exe / aqtion.exe found in ' + inst.root });
+        const args = ['+map', body.map];
+        if (body.dry) return json(res, 200, { ok: true, exe, args, launched: false });
+        try {
+          const child = spawn(exe, args, { cwd: inst.root, detached: true, stdio: 'ignore' });
+          child.unref();
+          return json(res, 200, { ok: true, exe, args, launched: true });
+        } catch (e) {
+          return json(res, 500, { error: 'launch failed: ' + e.message });
+        }
       }
       case '/api/enabled': {
         const result = inst.swaps.setEnabled(body.enabled);

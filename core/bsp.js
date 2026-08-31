@@ -168,9 +168,18 @@ export function extractBspGeometry(buf) {
     lumps.push({ ofs: buf.readUInt32LE(8 + i * 8), len: buf.readUInt32LE(12 + i * 8) });
   }
 
-  // player spawns from the entities lump
+  // inline brush models (lump 13): model 0 = world, 1..N = brush entities
+  const ml = lumps[13];
+  const models = [];
+  for (let p = ml.ofs; p + 48 <= ml.ofs + ml.len; p += 48) {
+    models.push({ firstface: buf.readInt32LE(p + 40), numfaces: buf.readInt32LE(p + 44) });
+  }
+
+  // entities lump: player spawns + brush entities that are invisible in-game
+  // (trigger volumes, areaportals) whose faces must not be drawn
   const entText = cstr(buf, lumps[LUMP_ENTITIES].ofs, lumps[LUMP_ENTITIES].ofs + lumps[LUMP_ENTITIES].len);
   const spawns = [];
+  const hiddenFaces = new Set();
   const entRe = /\{([^}]*)\}/g;
   let em;
   while ((em = entRe.exec(entText)) !== null) {
@@ -178,9 +187,17 @@ export function extractBspGeometry(buf) {
     const re = /"([^"]*)"\s*"([^"]*)"/g;
     let m;
     while ((m = re.exec(em[1])) !== null) props[m[1].toLowerCase()] = m[2];
-    if (/^info_player_(start|deathmatch)$/.test(props.classname || '') && props.origin) {
+    const cls = (props.classname || '').toLowerCase();
+    if (/^info_player_(start|deathmatch)$/.test(cls) && props.origin) {
       const [x, y, z] = props.origin.split(/\s+/).map(Number);
       if ([x, y, z].every(Number.isFinite)) spawns.push([x, y, z, Number(props.angle || 0) || 0]);
+    }
+    const mm = /^\*(\d+)$/.exec(props.model || '');
+    if (mm && (cls.startsWith('trigger_') || cls === 'func_areaportal')) {
+      const model = models[Number(mm[1])];
+      if (model) {
+        for (let f = model.firstface; f < model.firstface + model.numfaces; f++) hiddenFaces.add(f);
+      }
     }
   }
 
@@ -228,6 +245,7 @@ export function extractBspGeometry(buf) {
   // pass 1: gather faces with texel UVs and lightmap block info
   const facesOut = [];
   for (let i = 0; i < numFaces; i++) {
+    if (hiddenFaces.has(i)) continue;
     const p = fl.ofs + i * faceStride;
     let firstEdge, numFEdges, texinfoIdx, lightofs;
     if (extended) {

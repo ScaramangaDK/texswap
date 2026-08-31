@@ -1473,6 +1473,15 @@ $('view3dBtn').addEventListener('click', () => {
   if (window.AQViewer) window.AQViewer.open(state.detail);
   else toast('3D viewer failed to load', true);
 });
+$('gameBtn').addEventListener('click', async () => {
+  if (!state.detail) return;
+  try {
+    const r = await apiPost('/api/launchgame', { map: state.detail.name });
+    toast(`Launched ${r.exe.split('\\').pop()} on ${state.detail.name} — presets auto-apply on load, F9 re-applies after changes`);
+  } catch (e) {
+    toast('Launch failed: ' + e.message, true);
+  }
+});
 
 // bridge for the viewer module
 window.AQTS = {
