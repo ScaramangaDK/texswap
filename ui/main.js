@@ -738,8 +738,8 @@ async function buildTextureBrowser(body, opts = {}) {
   let mapFilterName = '';
 
   const colsSel = $('colsSel');
-  colsSel.value = localStorage.getItem('aq2ts.gridcols') || 'auto';
-  if (colsSel.selectedIndex < 0) colsSel.value = 'auto';
+  colsSel.value = localStorage.getItem('aq2ts.gridcols') || '6';
+  if (colsSel.selectedIndex < 0) colsSel.value = '6';
   const applyCols = () => {
     $('pickGrid').style.gridTemplateColumns =
       colsSel.value === 'auto' ? '' : `repeat(${colsSel.value}, 1fr)`;
