@@ -113,7 +113,7 @@ main { display: contents; }
 /* ---------- buttons ---------- */
 button {
   font: 600 13px/1 var(--font);
-  color: var(--text);
+  color: var(--accent-hi);
   background: var(--bg2);
   border: 1px solid var(--line-strong);
   border-radius: var(--r-s);
@@ -350,6 +350,7 @@ h1 { font-size: 16px; font-weight: 650; letter-spacing: 0.01em; }
   display: flex;
   align-items: center;
   gap: 7px;
+  color: var(--accent-hi);
 }
 #mapList .mtitle {
   color: var(--dim);
