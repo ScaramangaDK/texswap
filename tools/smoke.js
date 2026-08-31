@@ -9,7 +9,7 @@ const outDir = process.argv[3] || null;
 
 const t0 = Date.now();
 const inst = getInstall(dir);
-console.log('game dir :', inst.gameDir);
+console.log('game dir :', inst.root, `(${inst.gameDirs.join(' > ')})`);
 console.log('archives :', inst.fs.describeSources().join(', '));
 console.log('palette  :', inst.palette ? 'loaded (colormap.pcx)' : 'MISSING');
 for (const w of inst.fs.warnings) console.log('warning  :', w);

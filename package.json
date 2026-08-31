@@ -3,6 +3,7 @@
   "productName": "Ralle's AQ2 Texture Swapper",
   "version": "1.0.0",
   "description": "Restyle AQ2/AQtion maps: swap textures & skyboxes, tune lighting, share presets",
+  "author": "Ralle",
   "type": "module",
   "private": true,
   "main": "electron-main.mjs",

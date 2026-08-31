@@ -1457,7 +1457,8 @@ function openGuide() {
       <p>In the game: changes auto-apply on every map load — mid-map, just press <b>F9</b>.
       <b>🎮 View in game</b> launches the game on the current map.
       <b>🧊 3D view</b> previews in-app: drag to look, <b>WASD</b> + <b>Q/E</b> to fly,
-      <b>Shift</b> fast, click a wall to swap its texture, ☀ slider for brightness.</p>
+      <b>Shift</b> fast, click a wall to swap its texture. The <b>gl_modulate</b> and
+      <b>gl_brightness</b> sliders preview the same lighting cvars the game uses.</p>
 
       <div class="sectionhead">5 · Presets &amp; sharing</div>
       <p><b>Save as preset…</b> keeps named setups per map (chips to switch).
