@@ -23,7 +23,19 @@ function readZipIndex(file) {
     for (let i = tail.length - 22; i >= 0; i--) {
       if (tail.readUInt32LE(i) === ZIP_EOCD) { eocd = i; break; }
     }
-    if (eocd < 0) throw new Error('no zip end-of-central-directory');
+    if (eocd < 0) {
+      // people rename downloaded packs to .pkz without repacking - the game
+      // can't read those either, so say what the file really is
+      const head = Buffer.alloc(4);
+      fs.readSync(fd, head, 0, 4, 0);
+      if (head.toString('latin1').startsWith('Rar!')) {
+        throw new Error('this is a RAR archive renamed to .pkz - the game cannot read it either; repack it as a zip');
+      }
+      if (head[0] === 0x37 && head[1] === 0x7a) {
+        throw new Error('this is a 7z archive renamed to .pkz - the game cannot read it either; repack it as a zip');
+      }
+      throw new Error('no zip end-of-central-directory');
+    }
     const count = tail.readUInt16LE(eocd + 10);
     const cdSize = tail.readUInt32LE(eocd + 12);
     const cdOfs = tail.readUInt32LE(eocd + 16);
