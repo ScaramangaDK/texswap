@@ -1,15 +1,42 @@
 {
   "name": "aq2textureswapper",
-  "version": "0.1.0",
-  "description": "Swap and preview AQ2/AQtion map textures via q2pro softlinks",
+  "productName": "Ralle's AQ2 Texture Swapper",
+  "version": "1.0.0",
+  "description": "Restyle AQ2/AQtion maps: swap textures & skyboxes, tune lighting, share presets",
   "type": "module",
   "private": true,
+  "main": "electron-main.mjs",
   "scripts": {
-    "dev": "node devserver.js"
+    "dev": "node devserver.js",
+    "app": "electron .",
+    "dist": "electron-builder --win portable"
+  },
+  "build": {
+    "appId": "dk.ralle.aq2textureswapper",
+    "productName": "Ralles AQ2 Texture Swapper",
+    "icon": "build/icon.ico",
+    "files": [
+      "electron-main.mjs",
+      "devserver.js",
+      "core/**",
+      "ui/**",
+      "!ui/logo.png"
+    ],
+    "win": {
+      "target": "portable",
+      "icon": "build/icon.ico"
+    },
+    "portable": {
+      "artifactName": "RallesAQ2TextureSwapper.exe"
+    }
   },
   "dependencies": {
     "jpeg-js": "^0.4.4",
     "pngjs": "^7.0.0",
     "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "electron": "^44.1.0",
+    "electron-builder": "^26.15.3"
   }
 }

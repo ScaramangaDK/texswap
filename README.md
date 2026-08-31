@@ -4,10 +4,27 @@ Restyle AQ2/AQtion map textures for gameplay: browse every texture a map uses,
 swap them via q2pro's `softlink` command, preview the result, and save per-map
 presets you can share with friends.
 
-**Status: milestone 3** — swapping confirmed live in-game; named presets,
-export/import sharing, and a master on/off switch. See
-[BRAINSTORM.md](BRAINSTORM.md) for the full plan, roadmap and verified
+**Status: v1.0** — full app packaged as a single portable Windows exe.
+See [BRAINSTORM.md](BRAINSTORM.md) for the full history, roadmap and verified
 engine facts.
+
+## For players (the easy way)
+
+Get `RallesAQ2TextureSwapper.exe`, put it anywhere, double-click it.
+(Windows SmartScreen may warn once — "More info → Run anyway"; normal for
+unsigned hobby tools.) Then: point it at your AQ2/AQtion folder (Browse…),
+click **Install game hook** in the orange banner, and start swapping.
+Press **F9** in game to re-apply after changes; presets auto-apply on
+every map load.
+
+## Build the exe
+
+```
+npm run dist
+```
+
+Output lands in `dist\RallesAQ2TextureSwapper.exe`. `npm run app` starts the
+same app unpackaged (Electron).
 
 ## Run (dev)
 

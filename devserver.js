@@ -207,7 +207,7 @@ async function handleApi(req, url, res) {
   const dir = q.get('dir') || DEFAULT_DIR;
   switch (url.pathname) {
     case '/api/defaults':
-      return json(res, 200, { dir: DEFAULT_DIR });
+      return json(res, 200, { dir: fs.existsSync(DEFAULT_DIR) ? DEFAULT_DIR : '' });
 
     case '/api/scan':
       return json(res, 200, scanResult(getInstall(dir, q.get('refresh') === '1')));
@@ -294,7 +294,9 @@ async function handleApi(req, url, res) {
 server.on('error', e => {
   if (e.code === 'EADDRINUSE') {
     console.log(`AQ2 Texture Swapper is already running - just open http://127.0.0.1:${PORT}`);
-    process.exit(0);
+    // inside Electron, keep the window alive and reuse the running server
+    if (!process.env.AQ2TS_ELECTRON) process.exit(0);
+    return;
   }
   throw e;
 });

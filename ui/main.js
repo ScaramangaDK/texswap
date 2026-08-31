@@ -90,6 +90,11 @@ async function boot() {
     catch { state.dir = ''; }
   }
   $('dirInput').value = state.dir;
+  if (!state.dir) {
+    $('empty').firstElementChild.textContent = 'Welcome! Point me at your AQ2 / AQtion folder to get started.';
+    showBanner('First step: click Browse… (top right) and pick your AQ2 folder — the one with q2pro.exe / aqtion.exe in it.');
+    return;
+  }
   await rescan(false);
 }
 
