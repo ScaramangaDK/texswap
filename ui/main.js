@@ -98,6 +98,9 @@ async function rescan(refresh) {
   localStorage.setItem('aq2ts.dir', state.dir);
   state.catalog = null;
   state.skies = null;
+  mapTexCache.clear();
+  const oldDl = document.getElementById('mapNamesData');
+  if (oldDl) oldDl.remove();
   showBanner(null);
   $('empty').classList.remove('hidden');
   $('mapView').classList.add('hidden');
@@ -679,6 +682,31 @@ async function renderStockTab(t) {
   });
 }
 
+// Map-name autocomplete + per-map texture sets for the browser's map filter
+const mapTexCache = new Map();
+
+function ensureMapDatalist() {
+  if (document.getElementById('mapNamesData')) return;
+  const dl = document.createElement('datalist');
+  dl.id = 'mapNamesData';
+  for (const m of (state.scan && state.scan.maps) || []) {
+    if (m.error) continue;
+    const o = document.createElement('option');
+    o.value = m.name;
+    if (m.title) o.label = m.title;
+    dl.appendChild(o);
+  }
+  document.body.appendChild(dl);
+}
+
+async function getMapTextureSet(mapName) {
+  if (mapTexCache.has(mapName)) return mapTexCache.get(mapName);
+  const d = await apiGet('/api/map', { name: mapName });
+  const set = new Set(d.textures.map(x => x.name));
+  mapTexCache.set(mapName, set);
+  return set;
+}
+
 // Shared texture browser: used by the swap picker (onPick swaps) and by the
 // standalone Collections library (clicking files a texture into collections).
 async function buildTextureBrowser(body, opts = {}) {
@@ -686,15 +714,21 @@ async function buildTextureBrowser(body, opts = {}) {
     ${opts.libraryMode ? '<p style="color:var(--dim);font-size:12.5px;margin-bottom:10px">Browse every texture in the install. ☆ stars a favorite; ＋ (or clicking a texture) files it into named collections. Use the dropdown to view a collection.</p>' : ''}
     <div class="mtools">
       <input id="pickSearch" type="search" placeholder="Search textures…">
+      <input id="mapFilter" class="mapfilter" type="search" list="mapNamesData"
+        placeholder="on map… (name or title)" title="Show only textures used by one map — type its name or title">
       <select id="viewSel"></select>
       <button id="delSetBtn" class="danger hidden">🗑 delete collection</button>
       <span class="count" id="pickCount"></span>
     </div>
     <div class="pickgrid" id="pickGrid"></div>
   `;
+  ensureMapDatalist();
   const catalog = await ensureCatalog();
   const search = $('pickSearch');
   const viewSel = $('viewSel');
+  const mapInput = $('mapFilter');
+  let mapSet = null;
+  let mapFilterName = '';
   const src = state.scan || state.detail || {};
   const favs = new Set(src.favTextures || []);
   let sets = { ...(src.favSets || {}) };
@@ -730,6 +764,7 @@ async function buildTextureBrowser(body, opts = {}) {
       const members = new Set(sets[view.slice(4)] || []);
       matches = matches.filter(c => members.has(c.name));
     }
+    if (mapSet) matches = matches.filter(c => mapSet.has(c.name));
     matches = [...matches].sort((a, b) =>
       (favs.has(b.name) - favs.has(a.name)) || a.name.localeCompare(b.name));
     for (const c of matches.slice(0, 240)) {
@@ -776,10 +811,34 @@ async function buildTextureBrowser(body, opts = {}) {
       });
       grid.appendChild(cell);
     }
+    const onMap = mapFilterName ? ` on ${mapFilterName}` : '';
     $('pickCount').textContent = matches.length > 240
-      ? `showing 240 of ${matches.length} — refine search`
-      : `${matches.length} textures`;
+      ? `showing 240 of ${matches.length}${onMap} — refine search`
+      : `${matches.length} textures${onMap}`;
   };
+
+  const applyMapFilter = async () => {
+    const v = mapInput.value.trim().toLowerCase();
+    if (!v) {
+      mapSet = null; mapFilterName = '';
+      render();
+      return;
+    }
+    const maps = (state.scan && state.scan.maps) || [];
+    const m = maps.find(x => x.name === v) ||
+      maps.find(x => (x.title || '').toLowerCase() === v);
+    if (!m) { mapSet = null; mapFilterName = ''; render(); return; }
+    try {
+      mapSet = await getMapTextureSet(m.name);
+      mapFilterName = m.name;
+    } catch (e) {
+      toast('Could not read map ' + m.name + ': ' + e.message, true);
+      mapSet = null; mapFilterName = '';
+    }
+    render();
+  };
+  mapInput.addEventListener('input', applyMapFilter);
+  mapInput.addEventListener('change', applyMapFilter);
 
   // small anchored popup for collection membership
   const closeSetPopup = () => {

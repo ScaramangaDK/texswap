@@ -383,6 +383,7 @@ button.danger:hover { border-color: var(--bad); color: var(--bad); }
 .favbtn.fav { color: var(--accent); }
 .plusbtn { right: 28px; }
 
+.mtools .mapfilter { flex: 0 0 175px !important; min-width: 175px !important; }
 .mtools select {
   background: var(--bg);
   border: 1px solid var(--line);
