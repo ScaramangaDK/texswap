@@ -137,15 +137,9 @@ function renderHook() {
   area.style.alignItems = 'center';
   if (!state.scan) return;
 
-  if (state.scan.hook.installed) {
-    const chip = document.createElement('span');
-    chip.className = 'hookchip ok';
-    chip.textContent = '✓ game hook installed';
-    chip.title = state.scan.hook.autoexec;
-    area.appendChild(chip);
-  } else {
+  if (!state.scan.hook.installed) {
     const btn = document.createElement('button');
-    btn.textContent = 'Install game hook';
+    btn.textContent = '⚡ Install game hook';
     btn.title = 'Adds one line to autoexec.cfg so the game applies your presets on every map load (and binds F9 to re-apply).';
     btn.addEventListener('click', installHook);
     area.appendChild(btn);
@@ -1433,23 +1427,62 @@ async function openBrowser(startPath) {
   await load(startPath || $('dirInput').value.trim() || null);
 }
 
-function openHelp() {
+function openGuide() {
+  const hookOk = state.scan && state.scan.hook && state.scan.hook.installed;
+  const root = state.scan ? state.scan.root : '(no install scanned yet)';
   openModal(`
     <div class="mhead">
-      <h3>Which folder should the path point to?</h3>
+      <h3>📖 How to use Ralle's AQ2 Texture Swapper</h3>
       <button class="mclose">✕</button>
     </div>
     <div class="mbody helpbody">
-      <p>Point it at your <b>AQ2 / AQtion install folder</b> — the one that contains
-      <code>q2pro.exe</code> or <code>aqtion.exe</code>, with subfolders like
-      <code>action</code> and <code>baseaq</code> inside.</p>
-      <p>Example: <code>C:\\AQ2mapping\\AQ2</code></p>
-      <p>Pointing directly at a game folder (<code>…\\action</code> or <code>…\\baseaq</code>)
-      also works — the app finds the install root by itself.</p>
-      <p>After changing the path, click <b>Rescan</b>. The app reads your maps and textures
-      from there, and writes its swap files into that install's <code>texswap</code> folder.</p>
+      <div class="sectionhead" style="margin-top:0;border-top:none;padding-top:0">1 · Point it at your AQ2 install</div>
+      <p>The path box should hold your <b>AQ2 / AQtion folder</b> — the one containing
+      <code>q2pro.exe</code> or <code>aqtion.exe</code> with <code>action</code> / <code>baseaq</code> inside
+      (use <b>Browse…</b>). Pointing at a game subfolder also works. Currently scanned:
+      <code>${root}</code></p>
+
+      <div class="sectionhead">2 · Install the game hook (one time)</div>
+      <p>${hookOk
+        ? '✓ <b>Already installed.</b> One line in your autoexec.cfg makes the game apply your presets on every map load, and binds <b>F9</b> to re-apply.'
+        : 'Not installed yet — click below. It adds one line to autoexec.cfg so the game applies your presets on every map load, and binds <b>F9</b> to re-apply.'}</p>
+      ${hookOk ? '' : '<p><button class="primary" id="guideInstallHook">⚡ Install game hook</button></p>'}
+
+      <div class="sectionhead">3 · Swap textures</div>
+      <p>Pick a map, click any texture card. Choose a <b>stock texture</b> (search, filter by
+      collection or by map), a <b>flat/pattern color</b> (incl. the ralle_colors palette),
+      <b>your own image</b>, or make it <b>invisible</b> (works on trans/alphatest surfaces —
+      the dialog tells you which). Click the skybox card to change the sky.</p>
+
+      <div class="sectionhead">4 · See your changes</div>
+      <p>In the game: changes auto-apply on every map load — mid-map, just press <b>F9</b>.
+      <b>🎮 View in game</b> launches the game on the current map.
+      <b>🧊 3D view</b> previews in-app: drag to look, <b>WASD</b> + <b>Q/E</b> to fly,
+      <b>Shift</b> fast, click a wall to swap its texture, ☀ slider for brightness.</p>
+
+      <div class="sectionhead">5 · Presets &amp; sharing</div>
+      <p><b>Save as preset…</b> keeps named setups per map (chips to switch).
+      <b>Export…</b> writes a <code>.aq2swap.json</code> file to send to friends — they use
+      <b>Import preset…</b>. Custom images travel inside the file.</p>
+
+      <div class="sectionhead">6 · Collections &amp; favorites</div>
+      <p>In <b>📂 Collections</b> (or any picker): ★ marks favorites, ＋ files textures into
+      named collections ("great bricks"…), and the dropdown filters by them. The
+      <i>on map…</i> box shows only textures used by one map.</p>
+
+      <div class="sectionhead">7 · Lighting</div>
+      <p><b>Lighting</b> manages gl_modulate &amp; co. — global defaults for all maps plus
+      per-map overrides. Nothing applies until you tick "Apply these lighting settings in the game".</p>
+
+      <div class="sectionhead">8 · Safety</div>
+      <p>Everything lives in <code>&lt;install&gt;\\texswap\\</code> plus that one autoexec line —
+      shipped game files are never touched. <b>Reset map</b> reverts a map,
+      <b>Swaps: ON/OFF</b> parks everything at stock, and deleting the
+      <code>texswap</code> folder removes all traces.</p>
     </div>
   `);
+  const ih = document.getElementById('guideInstallHook');
+  if (ih) ih.addEventListener('click', () => { closeModal(); installHook(); });
 }
 
 $('aboutBtn').addEventListener('click', () => {
@@ -1467,7 +1500,7 @@ $('aboutBtn').addEventListener('click', () => {
   `);
 });
 $('browseBtn').addEventListener('click', () => openBrowser());
-$('helpBtn').addEventListener('click', openHelp);
+$('guideBtn').addEventListener('click', openGuide);
 $('rescanBtn').addEventListener('click', () => rescan(true));
 $('dirInput').addEventListener('keydown', e => { if (e.key === 'Enter') rescan(true); });
 $('mapSearch').addEventListener('input', renderMapList);
