@@ -45,7 +45,18 @@ function thumbUrl(params) {
 
 function swapThumbUrl(spec, size) {
   if (spec.type === 'flat') return thumbUrl({ flat: spec.color, style: spec.style || 'solid', size });
+  if (spec.type === 'custom') return thumbUrl({ custom: spec.file, size });
+  if (spec.type === 'invisible') return null;
   return thumbUrl({ tex: spec.to, size });
+}
+
+function swapLabel(spec) {
+  switch (spec.type) {
+    case 'flat': return `→ flat ${spec.color}`;
+    case 'custom': return `→ your image${spec.w ? ` (${spec.w}×${spec.h})` : ''}`;
+    case 'invisible': return '→ invisible';
+    default: return `→ ${spec.to}`;
+  }
 }
 
 function toast(msg, isErr = false) {
@@ -421,7 +432,9 @@ function renderGrid() {
     const wrap = document.createElement('div');
     wrap.className = 'imgwrap';
     const mainSrc = t.swap ? swapThumbUrl(t.swap, 128) : (t.missing ? null : thumbUrl({ tex: t.name }));
-    if (!mainSrc) {
+    if (t.swap && t.swap.type === 'invisible') {
+      wrap.innerHTML = '<span class="missing">👻 invisible</span>';
+    } else if (!mainSrc) {
       wrap.innerHTML = '<span class="missing">no image file</span>';
     } else {
       const img = document.createElement('img');
@@ -469,7 +482,7 @@ function renderGrid() {
     meta.className = 'tmeta';
     const dims = t.missing ? 'missing' : `${t.w}×${t.h} ${t.ext.slice(1)}`;
     meta.textContent = t.swap
-      ? (t.swap.type === 'flat' ? `→ flat ${t.swap.color}` : `→ ${t.swap.to}`)
+      ? swapLabel(t.swap)
       : `${dims} · ${t.faces} faces · ${t.areaPct}%`;
     const bar = document.createElement('div');
     bar.className = 'bar';
@@ -555,6 +568,7 @@ async function openPicker(t) {
     <div class="tabs">
       <button id="tabStock" class="active">Stock textures</button>
       <button id="tabFlat">Flat / clean</button>
+      <button id="tabCustom">Your image</button>
     </div>
     <div class="mbody" id="mbody"></div>
     <div class="mfoot" id="mfoot"></div>
@@ -569,14 +583,79 @@ async function openPicker(t) {
   }
   $('tabStock').addEventListener('click', () => switchTab(t, 'stock'));
   $('tabFlat').addEventListener('click', () => switchTab(t, 'flat'));
-  switchTab(t, t.swap && t.swap.type === 'flat' ? 'flat' : 'stock');
+  $('tabCustom').addEventListener('click', () => switchTab(t, 'custom'));
+  const startTab = t.swap && t.swap.type === 'flat' ? 'flat'
+    : t.swap && t.swap.type === 'custom' ? 'custom' : 'stock';
+  switchTab(t, startTab);
 }
 
 function switchTab(t, tab) {
   $('tabStock').classList.toggle('active', tab === 'stock');
   $('tabFlat').classList.toggle('active', tab === 'flat');
+  $('tabCustom').classList.toggle('active', tab === 'custom');
   if (tab === 'stock') renderStockTab(t);
+  else if (tab === 'custom') renderCustomTab(t);
   else renderFlatTab(t);
+}
+
+function renderCustomTab(t) {
+  const body = $('mbody');
+  const orig = t.missing ? 'unknown size' : `${t.w}×${t.h} ${t.ext.slice(1)}`;
+  body.innerHTML = `
+    <p style="color:var(--dim);margin-bottom:12px">Replace <span class="mono" style="color:var(--accent2)">${t.name}</span>
+      (original: ${orig}) with your own image — png, jpg or tga.
+      Matching the original's aspect ratio keeps it looking right on the walls.</p>
+    <div class="flatrow">
+      <input type="file" id="customFile" accept=".png,.jpg,.jpeg,.tga">
+      <img id="customPreview" class="flatpreview hidden" alt="preview">
+      <button class="primary hidden" id="customApply">Use this image</button>
+    </div>
+    <div class="sectionhead">Make it invisible</div>
+    <p style="color:var(--dim);font-size:12.5px;margin-bottom:10px">
+      Replaces the texture with a fully transparent image (png/tga) — good for signs, posters, overlays you want gone.
+      <b>Experimental:</b> needs hi-res world textures enabled in game (<span class="mono">r_override_textures 1</span>),
+      and some surfaces may render solid instead of disappearing — try it and see. In low-res (.wal) mode the original stays.</p>
+    <button id="invisApply">👻 Make invisible</button>
+  `;
+  let picked = null;
+  $('customFile').addEventListener('change', e => {
+    picked = e.target.files[0] || null;
+    const preview = $('customPreview');
+    const apply = $('customApply');
+    if (!picked) { preview.classList.add('hidden'); apply.classList.add('hidden'); return; }
+    apply.classList.remove('hidden');
+    if (/\.(png|jpe?g)$/i.test(picked.name)) {
+      preview.src = URL.createObjectURL(picked);
+      preview.classList.remove('hidden');
+    } else {
+      preview.classList.add('hidden'); // no native preview for tga
+    }
+  });
+  $('customApply').addEventListener('click', async () => {
+    if (!picked) return;
+    const buf = new Uint8Array(await picked.arrayBuffer());
+    let bin = '';
+    const CHUNK = 0x8000;
+    for (let i = 0; i < buf.length; i += CHUNK) {
+      bin += String.fromCharCode.apply(null, buf.subarray(i, i + CHUNK));
+    }
+    closeModal();
+    try {
+      applyMutation(await apiPost('/api/upload', {
+        map: state.detail.name,
+        from: t.name,
+        filename: picked.name,
+        dataB64: btoa(bin),
+      }));
+      toast('Your image is in - F9 in game to see it');
+    } catch (e) {
+      toast('Upload failed: ' + e.message, true);
+    }
+  });
+  $('invisApply').addEventListener('click', () => {
+    closeModal();
+    setSwap(t.name, { type: 'invisible' });
+  });
 }
 
 async function renderStockTab(t) {

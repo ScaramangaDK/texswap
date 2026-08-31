@@ -6,7 +6,9 @@
 // in <writeDir>/autoexec.cfg. Shipped game files are never modified.
 import fs from 'node:fs';
 import path from 'node:path';
-import { flatImage, transcode, encodeAs } from './gen.js';
+import crypto from 'node:crypto';
+import { flatImage, transparentImage, transcode, encodeAs, encodePngFile } from './gen.js';
+import { decodeImage } from './decoders.js';
 import { resolveImage } from './thumbs.js';
 
 const ALL_TEX_EXTS = ['.png', '.tga', '.jpg', '.wal'];
@@ -66,6 +68,23 @@ export class SwapStore {
 
   favTextures() {
     return this.data.favTextures || [];
+  }
+
+  // Store an uploaded replacement image (png/jpg/tga) and swap to it.
+  setCustomSwap(mapName, from, filename, buf) {
+    let ext = path.extname(filename).toLowerCase();
+    if (ext === '.jpeg') ext = '.jpg';
+    if (!['.png', '.jpg', '.tga'].includes(ext)) {
+      throw new Error('unsupported image type ' + (ext || '(none)') + ' - use png, jpg or tga');
+    }
+    const img = decodeImage(buf, ext, this.install.palette);
+    const master = encodePngFile(img);
+    const hash = crypto.createHash('sha1').update(master).digest('hex').slice(0, 8);
+    const rel = `custom/${sanitize(from)}-${hash}.png`;
+    const abs = path.join(this.dir, rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, master);
+    return this.setSwap(mapName, from, { type: 'custom', file: rel, w: img.width, h: img.height });
   }
 
   setFavTexture(name, fav) {
@@ -213,6 +232,16 @@ export class SwapStore {
       sky,
       lighting,
     };
+    // embed uploaded images so the file is fully shareable
+    const customFiles = {};
+    for (const spec of Object.values(swaps)) {
+      if (spec.type === 'custom' && spec.file) {
+        try {
+          customFiles[spec.file] = fs.readFileSync(path.join(this.dir, spec.file)).toString('base64');
+        } catch { /* file missing; receiver gets a warning on import */ }
+      }
+    }
+    if (Object.keys(customFiles).length) obj.customFiles = customFiles;
     const dir = path.join(this.dir, 'exports');
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, `${mapName}.aq2swap.json`);
@@ -227,14 +256,26 @@ export class SwapStore {
     const warnings = [];
     const known = this.install.listMaps().some(m => m.name === obj.map);
     if (!known) warnings.push(`map "${obj.map}" is not in this install - preset stored, applies if you get the map`);
+    const customOk = /^custom\/[a-z0-9_.-]+\.png$/i;
     const swaps = {};
     for (const [from, spec] of Object.entries(obj.swaps)) {
       if (spec && spec.type === 'flat' && typeof spec.color === 'string') swaps[from] = spec;
+      else if (spec && spec.type === 'invisible') swaps[from] = { type: 'invisible' };
       else if (spec && spec.type === 'stock' && typeof spec.to === 'string') {
         if (!this.install.fs.findFirst('textures/' + spec.to, ALL_TEX_EXTS.concat('.pcx'))) {
           warnings.push(`replacement "${spec.to}" not found here - skipped for ${from}`);
           continue;
         }
+        swaps[from] = spec;
+      } else if (spec && spec.type === 'custom' && customOk.test(spec.file || '')) {
+        const b64 = obj.customFiles && obj.customFiles[spec.file];
+        if (!b64) {
+          warnings.push(`custom image for ${from} missing from the file - skipped`);
+          continue;
+        }
+        const abs = path.join(this.dir, spec.file);
+        fs.mkdirSync(path.dirname(abs), { recursive: true });
+        fs.writeFileSync(abs, Buffer.from(b64, 'base64'));
         swaps[from] = spec;
       }
     }
@@ -282,6 +323,17 @@ export class SwapStore {
     } else if (spec.type === 'stock') {
       fileBase = sanitize(spec.to);
       make = () => transcode(this.install.fs, this.install.palette, 'textures/' + spec.to, ext, fileBase);
+    } else if (spec.type === 'invisible') {
+      // transparency needs an alpha channel: png/tga only, silently skip the rest
+      if (ext !== '.png' && ext !== '.tga') return null;
+      fileBase = 'invisible';
+      make = () => encodeAs(ext, transparentImage(), this.install.palette, fileBase);
+    } else if (spec.type === 'custom') {
+      fileBase = 'custom-' + path.basename(spec.file, '.png');
+      make = () => {
+        const buf = fs.readFileSync(path.join(this.dir, spec.file));
+        return encodeAs(ext, decodeImage(buf, '.png', this.install.palette), this.install.palette, fileBase);
+      };
     } else {
       warnings.push(`unknown swap type ${spec.type}`);
       return null;
@@ -316,7 +368,10 @@ export class SwapStore {
 
       if (entry) {
         for (const [from, spec] of Object.entries(entry.swaps)) {
-          for (const ext of this.#fromExts(from)) {
+          let exts = this.#fromExts(from);
+          // invisible works only through alpha-capable formats; always cover .tga too
+          if (spec.type === 'invisible') exts = [...new Set([...exts, '.tga'])];
+          for (const ext of exts) {
             const target = this.#ensureGen(spec, ext, warnings);
             if (target) {
               lines.push(`link textures/${from}${ext} ${target}`);

@@ -4,7 +4,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { GameFS } from './vfs.js';
 import { parseBsp, flagNames } from './bsp.js';
-import { decodePcx } from './decoders.js';
+import { decodePcx, decodeImage } from './decoders.js';
+import { encodePng, resizeRgba } from './thumbs.js';
 import { makeThumbPng, resolveImage, TEXTURE_EXTS, TEXTURE_EXTS_LOW } from './thumbs.js';
 import { imageSize } from './decoders.js';
 import { SwapStore } from './swaps.js';
@@ -234,6 +235,22 @@ export class Install {
   skyThumbPng(skyName, maxDim = 128) {
     return this.thumbPng('env/' + skyName + 'ft', maxDim) ||
       this.thumbPng('env/' + skyName + 'bk', maxDim);
+  }
+
+  // Thumbnail for an uploaded custom image (texswap/custom/*.png).
+  customThumbPng(relFile, maxDim = 128) {
+    if (!/^custom\/[a-z0-9_.-]+\.png$/i.test(relFile)) return null;
+    const key = 'custom:' + relFile.toLowerCase() + '@' + maxDim;
+    if (this.thumbCache.has(key)) return this.thumbCache.get(key);
+    let png = null;
+    try {
+      const buf = fs.readFileSync(path.join(this.writeDir, 'texswap', relFile));
+      png = encodePng(resizeRgba(decodeImage(buf, '.png', this.palette), maxDim));
+    } catch {
+      png = null;
+    }
+    this.thumbCache.set(key, png);
+    return png;
   }
 }
 

@@ -147,6 +147,11 @@ export function flatImage(colorHex, style = 'solid', size = 128) {
   return { width: size, height: size, data };
 }
 
+// Fully transparent RGBA image (for "invisible" swaps; png/tga only - WAL has no alpha).
+export function transparentImage(size = 64) {
+  return { width: size, height: size, data: Buffer.alloc(size * size * 4) };
+}
+
 // Decode the best existing variant of a texture and re-encode it as `ext`.
 export function transcode(gameFs, palette, targetBasePath, ext, name) {
   const img = loadRgba(gameFs, targetBasePath, palette);

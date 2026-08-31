@@ -80,6 +80,15 @@ async function handleApi(req, url, res) {
     const inst = getInstall(body.dir || DEFAULT_DIR);
     const lowRes = body.res === 'low';
     switch (url.pathname) {
+      case '/api/upload': {
+        if (!body.map || !body.from || !body.filename || !body.dataB64) {
+          return json(res, 400, { error: 'need map, from, filename and dataB64' });
+        }
+        const buf = Buffer.from(body.dataB64, 'base64');
+        if (buf.length > 16 * 1024 * 1024) return json(res, 400, { error: 'image too large (max 16 MB)' });
+        const result = inst.swaps.setCustomSwap(body.map, body.from, body.filename, buf);
+        return json(res, 200, { ok: true, ...result, detail: inst.mapDetail(body.map, lowRes) });
+      }
       case '/api/favtex': {
         if (!body.name) return json(res, 400, { error: 'need name' });
         const favTextures = inst.swaps.setFavTexture(body.name, Boolean(body.fav));
@@ -95,6 +104,8 @@ async function handleApi(req, url, res) {
           } else if (body.spec.type === 'flat') {
             try { parseColor(body.spec.color); }
             catch (e) { return json(res, 400, { error: e.message }); }
+          } else if (body.spec.type === 'invisible') {
+            // no extra fields to validate
           } else {
             return json(res, 400, { error: 'unknown swap type' });
           }
@@ -204,6 +215,7 @@ async function handleApi(req, url, res) {
       const size = Math.min(512, Number(q.get('size')) || 128);
       let png = null;
       if (q.get('tex')) png = inst.thumbPng('textures/' + q.get('tex'), size, q.get('res') === 'low');
+      else if (q.get('custom')) png = inst.customThumbPng(q.get('custom'), size);
       else if (q.get('sky')) png = inst.skyThumbPng(q.get('sky'), size);
       else if (q.get('flat')) {
         // generate at the requested size directly - resampling a fixed-size
