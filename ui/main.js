@@ -79,6 +79,7 @@ function swapThumbUrl(spec, size) {
   if (spec.type === 'flat') {
     const p = { flat: spec.color, style: spec.style || 'solid', size };
     if (spec.color2) p.color2 = spec.color2;
+    if (spec.scale) p.scale = spec.scale;
     return thumbUrl(p);
   }
   if (spec.type === 'custom') return thumbUrl({ custom: spec.file, size });
@@ -88,7 +89,7 @@ function swapThumbUrl(spec, size) {
 
 function swapLabel(spec) {
   switch (spec.type) {
-    case 'flat': return `→ flat ${spec.color}${spec.style && spec.style !== 'solid' ? ` · ${spec.style}${spec.color2 ? ' ' + spec.color2 : ''}` : ''}`;
+    case 'flat': return `→ flat ${spec.color}${spec.style && spec.style !== 'solid' ? ` · ${spec.style}${spec.scale && spec.scale !== 1 ? ` ${spec.scale}×` : ''}${spec.color2 ? ' ' + spec.color2 : ''}` : ''}`;
     case 'custom': return `→ your image${spec.w ? ` (${spec.w}×${spec.h})` : ''}`;
     case 'invisible': return '→ invisible';
     default: return `→ ${spec.to}`;
@@ -1043,6 +1044,7 @@ async function renderFlatTab(t) {
   let color = cur ? cur.color : '#9aa0a8';
   let style = cur && cur.style ? cur.style : 'solid';
   let color2 = cur && cur.color2 ? cur.color2 : null; // null = auto darker shade
+  let scale = cur && cur.scale ? cur.scale : 1;
   let updateRalleHint = () => {};
   const body = $('mbody');
   body.innerHTML = `
@@ -1055,7 +1057,14 @@ async function renderFlatTab(t) {
       <button class="primary" id="flatApply">Use this</button>
     </div>
     <div id="patternSection" class="hidden">
-      <div class="sectionhead">Pattern color</div>
+      <div class="sectionhead">Pattern color &amp; size</div>
+      <div class="flatrow">
+        <span class="count">Pattern size:</span>
+        <button class="scbtn" data-sc="0.5">½×</button>
+        <button class="scbtn" data-sc="1">1×</button>
+        <button class="scbtn" data-sc="2">2×</button>
+        <button class="scbtn" data-sc="4">4×</button>
+      </div>
       <div class="flatrow">
         <label><input type="checkbox" id="patAuto"> auto (darker shade of the base)</label>
         <label>Custom: <input type="color" id="flatColor2"></label>
@@ -1083,10 +1092,13 @@ async function renderFlatTab(t) {
     color2Input.value = color2 || autoShade();
     $('palGrid').querySelectorAll('.palswatch').forEach(x =>
       x.classList.toggle('sel', !!color2 && x.dataset.c === color2));
+    patSection.querySelectorAll('.scbtn').forEach(x =>
+      x.classList.toggle('sel', Number(x.dataset.sc) === scale));
   };
   const thumbParams = (base, s, size) => {
     const p = { flat: base, style: s, size };
     if (color2 && s !== 'solid') p.color2 = color2;
+    if (scale !== 1 && s !== 'solid') p.scale = scale;
     return p;
   };
   const renderStyles = () => {
@@ -1124,6 +1136,8 @@ async function renderFlatTab(t) {
       grid.appendChild(b);
     }
   } catch { /* no palette - the color input still works */ }
+  patSection.querySelectorAll('.scbtn').forEach(b =>
+    b.addEventListener('click', () => { scale = Number(b.dataset.sc); renderStyles(); updatePreview(); syncPattern(); }));
   patAuto.addEventListener('change', () => {
     color2 = patAuto.checked ? null : color2Input.value;
     renderStyles(); updatePreview(); syncPattern();
@@ -1166,6 +1180,7 @@ async function renderFlatTab(t) {
     closeModal();
     const spec = { type: 'flat', color: colorInput.value, style };
     if (style !== 'solid' && color2) spec.color2 = color2;
+    if (style !== 'solid' && scale !== 1) spec.scale = scale;
     setSwap(t.name, spec);
   });
   renderStyles();
@@ -1221,6 +1236,7 @@ async function renderFlatTab(t) {
           closeModal();
           const spec = { type: 'flat', color: picked, style };
           if (style !== 'solid' && color2) spec.color2 = color2;
+          if (style !== 'solid' && scale !== 1) spec.scale = scale;
           setSwap(t.name, spec);
         } catch {
           toast('Could not read that color yet - click again once its thumbnail has loaded', true);
@@ -1351,7 +1367,7 @@ function buildLightForm(container, values, placeholders) {
 
 // One dialog, two clearly-scoped tabs: global defaults vs this-map override.
 async function openMissingFix() {
-  const mf = { ...(state.scan.missingFix || { enabled: false, color: '#001f2b', style: 'grid', color2: '#774f17' }) };
+  const mf = { scale: 1, ...(state.scan.missingFix || { enabled: false, color: '#0f0f0f', style: 'grid', color2: '#5b3b0f' }) };
   openModal(`
     <div class="mhead">
       <h3>🧱 Missing textures</h3>
@@ -1363,6 +1379,13 @@ async function openMissingFix() {
       <b>in game across all maps</b> too, so broken maps get a clean uniform look.
       Textures you swap yourself always win over this.</p>
       <div class="stylerow" id="mfStyles"></div>
+      <div class="flatrow" id="mfScaleRow">
+        <span class="count">Pattern size:</span>
+        <button class="scbtn" data-sc="0.5">½×</button>
+        <button class="scbtn" data-sc="1">1×</button>
+        <button class="scbtn" data-sc="2">2×</button>
+        <button class="scbtn" data-sc="4">4×</button>
+      </div>
       <div class="flatrow">
         <img id="mfPreview" class="flatpreview" alt="preview">
         <label class="mfenable" title="Without this, the style only shows in the app - the game is untouched">
@@ -1397,12 +1420,16 @@ async function openMissingFix() {
   const thumbParams = (s, size) => {
     const p = { flat: colorInput.value, style: s, size };
     if (mf.color2 && s !== 'solid') p.color2 = mf.color2;
+    if (mf.scale && mf.scale !== 1 && s !== 'solid') p.scale = mf.scale;
     return p;
   };
   const sync = () => {
     autoBox.checked = !mf.color2;
     color2Input.value = mf.color2 || autoShade();
     $('mfPreview').src = thumbUrl(thumbParams(mf.style, 96));
+    $('mfScaleRow').classList.toggle('hidden', mf.style === 'solid');
+    $('mfScaleRow').querySelectorAll('.scbtn').forEach(x =>
+      x.classList.toggle('sel', Number(x.dataset.sc) === (mf.scale || 1)));
     $('mfPal').querySelectorAll('.palswatch').forEach(x =>
       x.classList.toggle('sel', !!mf.color2 && x.dataset.c === mf.color2));
     $('mfPalBase').querySelectorAll('.palswatch').forEach(x =>
@@ -1440,6 +1467,8 @@ async function openMissingFix() {
   colorInput.addEventListener('input', sync);
   autoBox.addEventListener('change', () => { mf.color2 = autoBox.checked ? null : color2Input.value; sync(); });
   color2Input.addEventListener('input', () => { mf.color2 = color2Input.value; sync(); });
+  $('mfScaleRow').querySelectorAll('.scbtn').forEach(b =>
+    b.addEventListener('click', () => { mf.scale = Number(b.dataset.sc); sync(); }));
   $('mfSave').addEventListener('click', async () => {
     try {
       const r = await apiPost('/api/missingfix', {
@@ -1447,6 +1476,7 @@ async function openMissingFix() {
         color: colorInput.value,
         style: mf.style,
         color2: mf.color2,
+        scale: mf.scale || 1,
       });
       state.scan.missingFix = r.missingFix;
       closeModal();

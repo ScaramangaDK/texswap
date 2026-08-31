@@ -814,6 +814,17 @@ footer code { color: var(--accent-hi); font-family: var(--mono); }
 .palswatch:hover { border-color: var(--accent-hi); transform: scale(1.25); }
 .palswatch.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
 
+.scbtn {
+  padding: 4px 11px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+.scbtn.sel {
+  border-color: var(--accent);
+  color: var(--accent-hi);
+  box-shadow: var(--glow-soft);
+}
+
 .mfenable {
   display: flex;
   align-items: center;

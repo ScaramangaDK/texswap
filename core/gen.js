@@ -114,14 +114,15 @@ export function parseColor(hex) {
 
 export const FLAT_STYLES = ['solid', 'grid', 'checker', 'stripes', 'diag'];
 
-export function flatImage(colorHex, style = 'solid', size = 128, patternHex = null) {
+export function flatImage(colorHex, style = 'solid', size = 128, patternHex = null, scale = 1) {
   const [r, g, b] = parseColor(colorHex);
   const data = Buffer.alloc(size * size * 4);
   // pattern lines: explicit second color if given, else a darker shade
   const dark = patternHex
     ? parseColor(patternHex)
     : [Math.max(0, r - 28), Math.max(0, g - 28), Math.max(0, b - 28)];
-  const cell = Math.max(8, Math.round(size / 4));      // 32px cells at 128
+  const sc = Math.min(8, Math.max(0.25, Number(scale) || 1));
+  const cell = Math.max(4, Math.round(size / 4 * sc)); // 32px cells at 128, 1x
   const lw = Math.max(1, Math.round(size / 64));       // 2px lines at 128
   const half = Math.floor(cell / 2);
   for (let y = 0; y < size; y++) {

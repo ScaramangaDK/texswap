@@ -41,13 +41,15 @@ function cleanCvarMap(obj) {
 // textures the install doesn't have (and, when enabled, gets link'd
 // in-game across all maps). Falls back to the cyan2 + brown grid default.
 function cleanMissingFix(m) {
-  const f = { enabled: false, color: '#001f2b', style: 'grid', color2: '#774f17' };
+  const f = { enabled: false, color: '#0f0f0f', style: 'grid', color2: '#5b3b0f', scale: 1 };
   if (!m || typeof m !== 'object') return f;
   f.enabled = Boolean(m.enabled);
   try { parseColor(m.color); f.color = m.color; } catch { /* keep default */ }
   if (FLAT_STYLES.includes(m.style)) f.style = m.style;
   if (m.color2 === null) f.color2 = null;
   else { try { parseColor(m.color2); f.color2 = m.color2; } catch { /* keep default */ } }
+  const sc = Number(m.scale);
+  if (Number.isFinite(sc) && sc >= 0.25 && sc <= 8) f.scale = sc;
   return f;
 }
 
@@ -425,8 +427,9 @@ export class SwapStore {
     let fileBase, make, alwaysWrite = false;
     if (spec.type === 'flat') {
       const c2 = spec.color2 ? '-' + spec.color2.replace('#', '') : '';
-      fileBase = `flat-${spec.color.replace('#', '')}-${spec.style || 'solid'}${c2}`;
-      make = () => encodeAs(ext, flatImage(spec.color, spec.style, 128, spec.color2 || null), this.install.palette, fileBase);
+      const sc = spec.scale && spec.scale !== 1 ? '-x' + String(spec.scale).replace('.', '_') : '';
+      fileBase = `flat-${spec.color.replace('#', '')}-${spec.style || 'solid'}${c2}${sc}`;
+      make = () => encodeAs(ext, flatImage(spec.color, spec.style, 128, spec.color2 || null, spec.scale || 1), this.install.palette, fileBase);
       alwaysWrite = true; // cheap to generate; guarantees pattern tweaks reach disk
     } else if (spec.type === 'stock') {
       fileBase = sanitize(spec.to);
@@ -498,6 +501,7 @@ export class SwapStore {
       if (this.enabled && MF && MF.enabled) {
         const spec = { type: 'flat', color: MF.color, style: MF.style };
         if (MF.color2) spec.color2 = MF.color2;
+        if (MF.scale && MF.scale !== 1) spec.scale = MF.scale;
         for (const name of this.install.missingTextures(map.file)) {
           if (entry && entry.swaps[name]) continue;
           for (const ext of ['.png', '.wal']) {

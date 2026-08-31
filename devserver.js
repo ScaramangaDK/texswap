@@ -140,6 +140,10 @@ async function handleApi(req, url, res) {
               parseColor(body.spec.color);
               if (body.spec.color2) parseColor(body.spec.color2);
             } catch (e) { return json(res, 400, { error: e.message }); }
+            if (body.spec.scale !== undefined) {
+              const sc = Number(body.spec.scale);
+              if (!Number.isFinite(sc) || sc < 0.25 || sc > 8) return json(res, 400, { error: 'bad pattern scale' });
+            }
           } else {
             return json(res, 400, { error: 'unknown swap type' });
           }
@@ -303,7 +307,7 @@ async function handleApi(req, url, res) {
         // generate at the requested size directly - resampling a fixed-size
         // pattern makes thin grid lines look broken
         try {
-          png = encodePng(flatImage(q.get('flat'), q.get('style') || 'solid', size, q.get('color2') || null));
+          png = encodePng(flatImage(q.get('flat'), q.get('style') || 'solid', size, q.get('color2') || null, Number(q.get('scale')) || 1));
         } catch { png = null; }
       } else return json(res, 400, { error: 'missing ?tex=, ?sky= or ?flat=' });
       if (!png) { res.writeHead(404); return res.end(); }

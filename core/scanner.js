@@ -272,17 +272,17 @@ export class Install {
   }
 
   // Served in place of textures the install doesn't have, rendered in the
-  // user's configured missing-texture style (default: ralle_colors/cyan2
-  // base #001f2b with a #774f17 grid, hardcoded so it renders everywhere).
+  // user's configured missing-texture style (default: near-black #0f0f0f
+  // with a #5b3b0f brown grid).
   placeholderPng(size = 128) {
     const mf = this.swaps.missingFixConfig();
-    const key = `placeholder@${size}@${mf.color}|${mf.style}|${mf.color2 || ''}`;
+    const key = `placeholder@${size}@${mf.color}|${mf.style}|${mf.color2 || ''}|${mf.scale || 1}`;
     if (this.thumbCache.has(key)) return this.thumbCache.get(key);
     let png;
     try {
-      png = encodePng(flatImage(mf.color, mf.style, size, mf.color2 || null));
+      png = encodePng(flatImage(mf.color, mf.style, size, mf.color2 || null, mf.scale || 1));
     } catch {
-      png = encodePng(flatImage('#001f2b', 'grid', size, '#774f17'));
+      png = encodePng(flatImage('#0f0f0f', 'grid', size, '#5b3b0f'));
     }
     this.thumbCache.set(key, png);
     return png;
