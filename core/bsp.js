@@ -10,6 +10,7 @@ const LUMP_SURFEDGES = 12;
 
 export const SURF_FLAGS = {
   1: 'light', 4: 'sky', 8: 'warp', 16: 'trans33', 32: 'trans66', 64: 'flowing', 128: 'nodraw',
+  33554432: 'alphatest', // q2pro extended (1<<25): masked textures, fully transparent holes
 };
 
 function cstr(buf, start, end) {

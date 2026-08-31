@@ -10,7 +10,9 @@ function urlForGroup(name, detail, isTrans) {
   // trans surfaces: always load the .wal with palette-255 masking — hi-res
   // conversions often have the salmon "transparent color" baked in opaquely
   if (t && t.swap) {
-    if (t.swap.type === 'invisible') return { invisible: true, trans: t.flags.some(f => f.startsWith('trans')) };
+    if (t.swap.type === 'invisible') {
+      return { invisible: true, trans: t.flags.some(f => f.startsWith('trans') || f === 'alphatest') };
+    }
     if (t.swap.type === 'stock' && isTrans) {
       return { url: AQTS.thumbUrl({ tex: t.swap.to, size: 256, alpha: 1, res: 'low' }) };
     }
@@ -32,9 +34,9 @@ function loadMapTexture(url) {
 }
 
 function applyGroupLook(mesh, detail) {
-  const isTrans = mesh.userData.flags &&
-    (mesh.userData.flags.includes('trans33') || mesh.userData.flags.includes('trans66'));
-  const info = urlForGroup(mesh.userData.texName, detail, isTrans);
+  const f = mesh.userData.flags || [];
+  const isMasked = f.includes('trans33') || f.includes('trans66') || f.includes('alphatest');
+  const info = urlForGroup(mesh.userData.texName, detail, isMasked);
   const mat = mesh.material;
   if (info.invisible) {
     if (info.trans) {
@@ -143,13 +145,16 @@ async function open(detail) {
     if (lightMap && g.luvs) {
       bg.setAttribute('uv1', new THREE.BufferAttribute(new Float32Array(g.luvs), 2));
     }
-    const trans = g.flags.includes('trans33') || g.flags.includes('trans66');
-    const opacity = g.flags.includes('trans33') ? 0.45 : g.flags.includes('trans66') ? 0.75 : 1;
+    const alphatest = g.flags.includes('alphatest');
+    const trans = !alphatest && (g.flags.includes('trans33') || g.flags.includes('trans66'));
+    const opacity = trans ? (g.flags.includes('trans33') ? 0.45 : 0.75) : 1;
     const common = {
       side: THREE.DoubleSide,
       transparent: trans,
       opacity,
-      alphaTest: trans ? 0.05 : 0, // palette-255 holes stay holes
+      // alphatest surfaces: opaque where texels exist, hard holes elsewhere;
+      // blended trans surfaces still cut their palette-255 holes
+      alphaTest: alphatest ? 0.5 : trans ? 0.05 : 0,
     };
     const mat = lightMap
       ? new THREE.MeshBasicMaterial({ ...common, lightMap, lightMapIntensity: lmIntensity })

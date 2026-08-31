@@ -621,7 +621,7 @@ function renderCustomTab(t) {
       <button class="primary hidden" id="customApply">Use this image</button>
     </div>
     <div class="sectionhead">Make it invisible</div>
-    ${t.flags.includes('trans33') || t.flags.includes('trans66') ? `
+    ${t.flags.includes('trans33') || t.flags.includes('trans66') || t.flags.includes('alphatest') ? `
     <p style="color:#6fdc8f;font-size:12.5px;margin-bottom:10px">
       ✓ This texture sits on <b>transparent (trans) surfaces</b> — invisible works here.
       Needs hi-res world textures in game (transparency can't travel through .wal files).</p>
