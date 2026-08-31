@@ -70,7 +70,7 @@ body {
   height: 100%;
   display: grid;
   grid-template-columns: 272px 1fr;
-  grid-template-rows: auto auto 1fr auto;
+  grid-template-rows: auto auto auto 1fr auto;
   background: var(--bg0);
   /* even orange ring around the whole plate */
   border: 2px solid rgba(255, 140, 26, 0.65);
@@ -309,12 +309,28 @@ h1 { font-size: 16px; font-weight: 650; letter-spacing: 0.01em; }
   white-space: pre-wrap;
 }
 
+.setupbanner {
+  grid-column: 2;
+  grid-row: 3;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 11px 18px;
+  background: var(--accent-soft);
+  border-bottom: 1px solid rgba(255, 140, 26, 0.35);
+  font-size: 13.5px;
+  color: var(--text);
+}
+.setupbanner span { flex: 1; min-width: 260px; }
+.setupbanner b { color: var(--accent-hi); }
+
 /* ============================================================
    layout: sidebar owns the full-height left column (logo in the corner)
    ============================================================ */
 #sidebar {
   grid-column: 1;
-  grid-row: 1 / span 3;
+  grid-row: 1 / span 4;
   min-height: 0;
   background: var(--bg1);
   border-right: 1px solid var(--line);
@@ -365,7 +381,7 @@ h1 { font-size: 16px; font-weight: 650; letter-spacing: 0.01em; }
 
 #content {
   grid-column: 2;
-  grid-row: 3;
+  grid-row: 4;
   min-height: 0;
   overflow-y: auto;
   padding: 20px 24px;
@@ -613,7 +629,7 @@ h1 { font-size: 16px; font-weight: 650; letter-spacing: 0.01em; }
 /* ---------- footer ---------- */
 footer {
   grid-column: 1 / -1;
-  grid-row: 4;
+  grid-row: 5;
   padding: 8px 18px;
   color: var(--faint);
   font-size: 11.5px;

@@ -137,13 +137,7 @@ function renderHook() {
   area.style.alignItems = 'center';
   if (!state.scan) return;
 
-  if (!state.scan.hook.installed) {
-    const btn = document.createElement('button');
-    btn.textContent = '⚡ Install game hook';
-    btn.title = 'Adds one line to autoexec.cfg so the game applies your presets on every map load (and binds F9 to re-apply).';
-    btn.addEventListener('click', installHook);
-    area.appendChild(btn);
-  }
+  $('setupBanner').classList.toggle('hidden', state.scan.hook.installed);
 
   const toggle = document.createElement('button');
   const on = state.scan.swapsEnabled !== false;
@@ -1501,6 +1495,8 @@ $('aboutBtn').addEventListener('click', () => {
 });
 $('browseBtn').addEventListener('click', () => openBrowser());
 $('guideBtn').addEventListener('click', openGuide);
+$('setupHookBtn').addEventListener('click', installHook);
+$('setupMoreBtn').addEventListener('click', openGuide);
 $('rescanBtn').addEventListener('click', () => rescan(true));
 $('dirInput').addEventListener('keydown', e => { if (e.key === 'Enter') rescan(true); });
 $('mapSearch').addEventListener('input', renderMapList);
