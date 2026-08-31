@@ -172,7 +172,10 @@ async function open(detail) {
     const opacity = trans ? (g.flags.includes('trans33') ? 0.45 : 0.75) : 1;
     const overlay = alphatest || trans;
     const common = {
-      side: THREE.DoubleSide,
+      // one-sided like the engine: coplanar back-to-back faces (thin fences,
+      // grass sheets, water tops/bottoms) otherwise z-fight their own twin.
+      // BSP winding is clockwise-from-front, which is three.js's back side.
+      side: THREE.BackSide,
       transparent: trans,
       opacity,
       // alphatest surfaces: opaque where texels exist, hard holes elsewhere;
