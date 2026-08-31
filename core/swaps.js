@@ -139,7 +139,10 @@ export class SwapStore {
         }
       }
 
-      if (active) lines.push('r_reload');
+      if (active) {
+        lines.push(`echo [texswap] applied ${active} link(s) for ${map.name}`);
+        lines.push('r_reload');
+      }
       const cfgPath = path.join(this.dir, `${map.name}.cfg`);
       const text = lines.join('\n') + '\n';
       let prev = null;
@@ -154,8 +157,10 @@ export class SwapStore {
       '// AQ2 Texture Swapper hook - exec\'d from autoexec.cfg',
       '// Applies this map\'s texture preset every time a map starts,',
       '// and binds F9 to re-apply instantly while playing.',
-      'set cl_beginmapcmd "exec texswap/$cl_mapname.cfg"',
-      'bind F9 "exec texswap/$cl_mapname.cfg"',
+      // ${...} braces are required: "$cl_mapname.cfg" would parse the macro
+      // name as "cl_mapname.cfg" and expand to nothing (engine-verified).
+      'set cl_beginmapcmd "exec texswap/${cl_mapname}.cfg"',
+      'bind F9 "exec texswap/${cl_mapname}.cfg"',
       '',
     ].join('\n');
     const hookPath = path.join(this.dir, 'hook.cfg');
