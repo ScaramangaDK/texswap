@@ -40,7 +40,7 @@ export class SwapStore {
     this.install = install;
     this.dir = path.join(install.writeDir, 'texswap');
     this.file = path.join(this.dir, 'presets.json');
-    this.data = { version: 2, enabled: true, lighting: { manage: false, global: {}, extra: '' }, maps: {} };
+    this.data = { version: 2, enabled: true, lighting: { manage: false, global: {}, extra: '' }, recentFlats: [], favTextures: [], maps: {} };
     try {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
       if (raw && raw.maps) {
@@ -52,10 +52,30 @@ export class SwapStore {
             global: cleanCvarMap(raw.lighting && raw.lighting.global),
             extra: typeof (raw.lighting && raw.lighting.extra) === 'string' ? raw.lighting.extra.slice(0, 2000) : '',
           },
+          recentFlats: Array.isArray(raw.recentFlats) ? raw.recentFlats.slice(0, 12) : [],
+          favTextures: Array.isArray(raw.favTextures) ? raw.favTextures : [],
           maps: raw.maps,
         };
       }
     } catch { /* no presets yet */ }
+  }
+
+  recentFlats() {
+    return this.data.recentFlats || [];
+  }
+
+  favTextures() {
+    return this.data.favTextures || [];
+  }
+
+  setFavTexture(name, fav) {
+    const set = new Set(this.data.favTextures || []);
+    if (fav) set.add(name);
+    else set.delete(name);
+    this.data.favTextures = [...set].sort();
+    fs.mkdirSync(this.dir, { recursive: true });
+    fs.writeFileSync(this.file, JSON.stringify(this.data, null, 2));
+    return this.data.favTextures;
   }
 
   lightingConfig() {
@@ -103,6 +123,11 @@ export class SwapStore {
     const e = this.mapEntry(mapName, true);
     if (spec === null) delete e.swaps[from];
     else e.swaps[from] = spec;
+    if (spec && spec.type === 'flat') {
+      const recents = (this.data.recentFlats || []).filter(c => c !== spec.color);
+      recents.unshift(spec.color);
+      this.data.recentFlats = recents.slice(0, 12);
+    }
     e.active = null; // working state diverged from any saved preset
     return this.#saveAndMaterialize();
   }

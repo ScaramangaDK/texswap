@@ -3,26 +3,28 @@
 import { PNG } from 'pngjs';
 import { decodeImage, imageSize } from './decoders.js';
 
-// Order mirrors q2pro's hi-res override behavior. TODO(verify): exact engine order.
+// Hi-res-first mirrors the engine's override mode; low-res-first mirrors
+// playing with world texture overrides off (original .wal/.pcx files).
 export const TEXTURE_EXTS = ['.png', '.tga', '.jpg', '.wal', '.pcx'];
+export const TEXTURE_EXTS_LOW = ['.wal', '.pcx', '.png', '.tga', '.jpg'];
 
-export function resolveImage(gameFs, basePath) {
-  for (const ext of TEXTURE_EXTS) {
+export function resolveImage(gameFs, basePath, exts = TEXTURE_EXTS) {
+  for (const ext of exts) {
     const p = (basePath + ext).toLowerCase();
     if (gameFs.has(p)) return { path: p, ext, source: gameFs.sourceOf(p) };
   }
   return null;
 }
 
-export function loadRgba(gameFs, basePath, palette) {
-  const hit = resolveImage(gameFs, basePath);
+export function loadRgba(gameFs, basePath, palette, exts = TEXTURE_EXTS) {
+  const hit = resolveImage(gameFs, basePath, exts);
   if (!hit) return null;
   const buf = gameFs.read(hit.path);
   return { ...decodeImage(buf, hit.ext, palette), path: hit.path, ext: hit.ext, source: hit.source };
 }
 
-export function sizeOf(gameFs, basePath) {
-  const hit = resolveImage(gameFs, basePath);
+export function sizeOf(gameFs, basePath, exts = TEXTURE_EXTS) {
+  const hit = resolveImage(gameFs, basePath, exts);
   if (!hit) return null;
   const buf = gameFs.read(hit.path);
   const dims = imageSize(buf, hit.ext);
@@ -62,8 +64,8 @@ export function encodePng(img) {
   return PNG.sync.write(png);
 }
 
-export function makeThumbPng(gameFs, basePath, palette, maxDim = 128) {
-  const img = loadRgba(gameFs, basePath, palette);
+export function makeThumbPng(gameFs, basePath, palette, maxDim = 128, exts = TEXTURE_EXTS) {
+  const img = loadRgba(gameFs, basePath, palette, exts);
   if (!img) return null;
   return encodePng(resizeRgba(img, maxDim));
 }

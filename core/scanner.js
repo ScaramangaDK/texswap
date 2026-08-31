@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import { GameFS } from './vfs.js';
 import { parseBsp, flagNames } from './bsp.js';
 import { decodePcx } from './decoders.js';
-import { makeThumbPng, resolveImage, TEXTURE_EXTS } from './thumbs.js';
+import { makeThumbPng, resolveImage, TEXTURE_EXTS, TEXTURE_EXTS_LOW } from './thumbs.js';
 import { imageSize } from './decoders.js';
 import { SwapStore } from './swaps.js';
 
@@ -116,7 +116,8 @@ export class Install {
     return maps;
   }
 
-  mapDetail(mapName) {
+  mapDetail(mapName, lowRes = false) {
+    const extOrder = lowRes ? TEXTURE_EXTS_LOW : TEXTURE_EXTS;
     const bspPath = this.#mapPath(mapName);
     if (!bspPath) throw new Error('map not found: ' + mapName);
     const parsed = this.#parseMap(bspPath);
@@ -131,7 +132,7 @@ export class Install {
     }
 
     const textures = parsed.textures.map(t => {
-      const hit = resolveImage(this.fs, 'textures/' + t.name);
+      const hit = resolveImage(this.fs, 'textures/' + t.name, extOrder);
       let dims = null;
       if (hit) {
         const buf = this.fs.read(hit.path);
@@ -169,6 +170,8 @@ export class Install {
       swapsEnabled: this.swaps.enabled,
       lighting: this.swaps.mapLighting(mapName),
       lightingManaged: this.swaps.lightingConfig().manage,
+      recentFlats: this.swaps.recentFlats(),
+      favTextures: this.swaps.favTextures(),
       extended: parsed.extended,
       warnings: parsed.warnings,
       hasPalette: Boolean(this.palette),
@@ -215,12 +218,12 @@ export class Install {
     return this.skyCatalog;
   }
 
-  thumbPng(basePath, maxDim = 128) {
-    const key = basePath.toLowerCase() + '@' + maxDim;
+  thumbPng(basePath, maxDim = 128, lowRes = false) {
+    const key = basePath.toLowerCase() + '@' + maxDim + (lowRes ? '@low' : '');
     if (this.thumbCache.has(key)) return this.thumbCache.get(key);
     let png = null;
     try {
-      png = makeThumbPng(this.fs, basePath, this.palette, maxDim);
+      png = makeThumbPng(this.fs, basePath, this.palette, maxDim, lowRes ? TEXTURE_EXTS_LOW : TEXTURE_EXTS);
     } catch {
       png = null;
     }

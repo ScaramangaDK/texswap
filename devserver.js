@@ -78,7 +78,13 @@ async function handleApi(req, url, res) {
   if (req.method === 'POST') {
     const body = await readBody(req);
     const inst = getInstall(body.dir || DEFAULT_DIR);
+    const lowRes = body.res === 'low';
     switch (url.pathname) {
+      case '/api/favtex': {
+        if (!body.name) return json(res, 400, { error: 'need name' });
+        const favTextures = inst.swaps.setFavTexture(body.name, Boolean(body.fav));
+        return json(res, 200, { ok: true, favTextures });
+      }
       case '/api/swap': {
         if (!body.map || !body.from) return json(res, 400, { error: 'need map and from' });
         if (body.spec) {
@@ -94,17 +100,17 @@ async function handleApi(req, url, res) {
           }
         }
         const result = inst.swaps.setSwap(body.map, body.from, body.spec || null);
-        return json(res, 200, { ok: true, ...result, detail: inst.mapDetail(body.map) });
+        return json(res, 200, { ok: true, ...result, detail: inst.mapDetail(body.map, lowRes) });
       }
       case '/api/sky': {
         if (!body.map) return json(res, 400, { error: 'need map' });
         const result = inst.swaps.setSky(body.map, body.to || null);
-        return json(res, 200, { ok: true, ...result, detail: inst.mapDetail(body.map) });
+        return json(res, 200, { ok: true, ...result, detail: inst.mapDetail(body.map, lowRes) });
       }
       case '/api/reset': {
         if (!body.map) return json(res, 400, { error: 'need map' });
         const result = inst.swaps.resetMap(body.map);
-        return json(res, 200, { ok: true, ...result, detail: inst.mapDetail(body.map) });
+        return json(res, 200, { ok: true, ...result, detail: inst.mapDetail(body.map, lowRes) });
       }
       case '/api/hook': {
         const status = inst.swaps.installHook();
@@ -121,19 +127,19 @@ async function handleApi(req, url, res) {
       case '/api/maplighting': {
         if (!body.map) return json(res, 400, { error: 'need map' });
         const result = inst.swaps.setMapLighting(body.map, body.lighting);
-        return json(res, 200, { ok: true, ...result, detail: inst.mapDetail(body.map) });
+        return json(res, 200, { ok: true, ...result, detail: inst.mapDetail(body.map, lowRes) });
       }
       case '/api/preset/save': {
         const name = inst.swaps.savePreset(body.map, body.name);
-        return json(res, 200, { ok: true, name, detail: inst.mapDetail(body.map) });
+        return json(res, 200, { ok: true, name, detail: inst.mapDetail(body.map, lowRes) });
       }
       case '/api/preset/load': {
         const result = inst.swaps.loadPreset(body.map, body.name);
-        return json(res, 200, { ok: true, ...result, detail: inst.mapDetail(body.map) });
+        return json(res, 200, { ok: true, ...result, detail: inst.mapDetail(body.map, lowRes) });
       }
       case '/api/preset/delete': {
         inst.swaps.deletePreset(body.map, body.name);
-        return json(res, 200, { ok: true, detail: inst.mapDetail(body.map) });
+        return json(res, 200, { ok: true, detail: inst.mapDetail(body.map, lowRes) });
       }
       case '/api/export': {
         const { obj, file } = inst.swaps.exportMap(body.map);
@@ -159,7 +165,7 @@ async function handleApi(req, url, res) {
     case '/api/map': {
       const name = q.get('name');
       if (!name) return json(res, 400, { error: 'missing ?name=' });
-      return json(res, 200, getInstall(dir).mapDetail(name));
+      return json(res, 200, getInstall(dir).mapDetail(name, q.get('res') === 'low'));
     }
 
     case '/api/browse': {
@@ -197,7 +203,7 @@ async function handleApi(req, url, res) {
       const inst = getInstall(dir);
       const size = Math.min(512, Number(q.get('size')) || 128);
       let png = null;
-      if (q.get('tex')) png = inst.thumbPng('textures/' + q.get('tex'), size);
+      if (q.get('tex')) png = inst.thumbPng('textures/' + q.get('tex'), size, q.get('res') === 'low');
       else if (q.get('sky')) png = inst.skyThumbPng(q.get('sky'), size);
       else if (q.get('flat')) {
         // generate at the requested size directly - resampling a fixed-size

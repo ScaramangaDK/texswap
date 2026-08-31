@@ -2,11 +2,9 @@
 // applied to the game via generated link-cfgs.
 const $ = id => document.getElementById(id);
 
-const SWATCHES = ['#c8ccd2', '#9aa0a8', '#6b7178', '#3f434a', '#ffffff', '#101010',
-  '#ff8c1a', '#3fa7ff', '#ff5d5d', '#41d97e'];
-
 const state = {
   dir: localStorage.getItem('aq2ts.dir') || '',
+  res: localStorage.getItem('aq2ts.res') || 'hi',
   scan: null,
   detail: null,
   activeMap: null,
@@ -29,7 +27,7 @@ function apiPost(pathname, body) {
   return fetch(pathname, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ dir: state.dir, ...body }),
+    body: JSON.stringify({ dir: state.dir, res: state.res, ...body }),
   }).then(async r => {
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || r.statusText);
@@ -40,6 +38,7 @@ function apiPost(pathname, body) {
 function thumbUrl(params) {
   const url = new URL('/api/thumb', location.origin);
   url.searchParams.set('dir', state.dir);
+  url.searchParams.set('res', state.res);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   return url.toString();
 }
@@ -260,7 +259,7 @@ async function selectMap(name) {
     li.classList.toggle('active', li.dataset.map === name);
   }
   try {
-    state.detail = await apiGet('/api/map', { name });
+    state.detail = await apiGet('/api/map', { name, res: state.res });
   } catch (e) {
     showBanner(`Could not read map ${name}: ${e.message}`);
     return;
@@ -585,17 +584,24 @@ async function renderStockTab(t) {
   body.innerHTML = `
     <div class="mtools">
       <input id="pickSearch" type="search" placeholder="Search textures…">
+      <label class="check"><input id="favOnly" type="checkbox"> ★ favorites only</label>
       <span class="count" id="pickCount"></span>
     </div>
     <div class="pickgrid" id="pickGrid"></div>
   `;
   const catalog = await ensureCatalog();
   const search = $('pickSearch');
+  const favOnly = $('favOnly');
+  const favs = new Set((state.detail && state.detail.favTextures) || []);
   const render = () => {
     const q = search.value.trim().toLowerCase();
     const grid = $('pickGrid');
     grid.textContent = '';
-    const matches = catalog.filter(c => c.name !== t.name && (!q || c.name.includes(q)));
+    let matches = catalog.filter(c => c.name !== t.name && (!q || c.name.includes(q)));
+    if (favOnly.checked) matches = matches.filter(c => favs.has(c.name));
+    // favorites float to the top
+    matches = [...matches].sort((a, b) =>
+      (favs.has(b.name) - favs.has(a.name)) || a.name.localeCompare(b.name));
     for (const c of matches.slice(0, 240)) {
       const cell = document.createElement('div');
       cell.className = 'pickcell' + (t.swap && t.swap.type === 'stock' && t.swap.to === c.name ? ' current' : '');
@@ -606,7 +612,24 @@ async function renderStockTab(t) {
       const label = document.createElement('div');
       label.className = 'pname';
       label.textContent = c.name;
-      cell.append(img, label);
+      const star = document.createElement('button');
+      star.className = 'favbtn' + (favs.has(c.name) ? ' fav' : '');
+      star.textContent = favs.has(c.name) ? '★' : '☆';
+      star.title = favs.has(c.name) ? 'Remove from favorites' : 'Mark as favorite';
+      star.addEventListener('click', async ev => {
+        ev.stopPropagation();
+        const nowFav = !favs.has(c.name);
+        try {
+          const r = await apiPost('/api/favtex', { name: c.name, fav: nowFav });
+          favs.clear();
+          for (const f of r.favTextures) favs.add(f);
+          if (state.detail) state.detail.favTextures = r.favTextures;
+          star.textContent = nowFav ? '★' : '☆';
+          star.classList.toggle('fav', nowFav);
+          star.title = nowFav ? 'Remove from favorites' : 'Mark as favorite';
+        } catch (e) { toast('Favorite failed: ' + e.message, true); }
+      });
+      cell.append(img, star, label);
       cell.addEventListener('click', () => {
         closeModal();
         setSwap(t.name, { type: 'stock', to: c.name });
@@ -618,6 +641,7 @@ async function renderStockTab(t) {
       : `${matches.length} textures`;
   };
   search.addEventListener('input', render);
+  favOnly.addEventListener('change', render);
   search.focus();
   render();
 }
@@ -680,19 +704,31 @@ async function renderFlatTab(t) {
   };
 
   const sw = $('swatches');
-  for (const c of SWATCHES) {
-    const b = document.createElement('button');
-    b.className = 'swatch' + (cur && cur.color.toLowerCase() === c ? ' sel' : '');
-    b.style.background = c;
-    b.title = c;
-    b.addEventListener('click', () => {
-      colorInput.value = c;
-      sw.querySelectorAll('.swatch').forEach(x => x.classList.remove('sel'));
-      b.classList.add('sel');
-      renderStyles();
-      updatePreview();
-    });
-    sw.appendChild(b);
+  const recents = (state.detail && state.detail.recentFlats) || [];
+  if (recents.length) {
+    const lbl = document.createElement('span');
+    lbl.className = 'count';
+    lbl.textContent = 'recent:';
+    sw.appendChild(lbl);
+    for (const c of recents) {
+      const b = document.createElement('button');
+      b.className = 'swatch' + (cur && cur.color.toLowerCase() === c.toLowerCase() ? ' sel' : '');
+      b.style.background = c;
+      b.title = c;
+      b.addEventListener('click', () => {
+        colorInput.value = c;
+        sw.querySelectorAll('.swatch').forEach(x => x.classList.remove('sel'));
+        b.classList.add('sel');
+        renderStyles();
+        updatePreview();
+      });
+      sw.appendChild(b);
+    }
+  } else {
+    const hint = document.createElement('span');
+    hint.className = 'count';
+    hint.textContent = 'Flat colors you use will show up here for quick re-picking.';
+    sw.appendChild(hint);
   }
   colorInput.addEventListener('input', () => { renderStyles(); updatePreview(); });
   $('flatApply').addEventListener('click', () => {
@@ -1061,6 +1097,12 @@ $('mapSearch').addEventListener('input', renderMapList);
 $('texSearch').addEventListener('input', renderGrid);
 $('sortSel').addEventListener('change', renderGrid);
 $('showUtility').addEventListener('change', renderGrid);
+$('lowRes').checked = state.res === 'low';
+$('lowRes').addEventListener('change', () => {
+  state.res = $('lowRes').checked ? 'low' : 'hi';
+  localStorage.setItem('aq2ts.res', state.res);
+  if (state.activeMap) selectMap(state.activeMap);
+});
 $('skyCard').addEventListener('click', openSkyPicker);
 $('resetMapBtn').addEventListener('click', resetMap);
 $('mapLightBtn').addEventListener('click', () => openLighting('map'));
