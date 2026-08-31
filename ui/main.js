@@ -35,6 +35,29 @@ function apiPost(pathname, body) {
   });
 }
 
+// picker texture dimensions, fetched lazily one rendered batch at a time
+// (probing all ~20k install textures up front takes ~25s); keyed by the
+// hi/low-res preview mode since that changes which file the thumb shows
+const texDimsCache = new Map();
+const dimKey = name => state.res + '|' + name;
+async function fillDims(batch, cells) {
+  const need = batch.filter(c => !texDimsCache.has(dimKey(c.name))).map(c => c.name);
+  if (need.length) {
+    try {
+      const r = await apiPost('/api/texdims', { names: need });
+      for (const n of need) {
+        const d = r.dims[n];
+        texDimsCache.set(dimKey(n), d ? `${d.w}×${d.h} ${d.ext.slice(1)}` : '');
+      }
+    } catch { return; }
+  }
+  cells.forEach((cell, i) => {
+    const el = cell.querySelector('.pdim');
+    const t = texDimsCache.get(dimKey(batch[i].name));
+    if (el && t) el.textContent = t;
+  });
+}
+
 function thumbUrl(params) {
   const url = new URL('/api/thumb', location.origin);
   url.searchParams.set('dir', state.dir);
@@ -801,6 +824,9 @@ async function buildTextureBrowser(body, opts = {}) {
       const label = document.createElement('div');
       label.className = 'pname';
       label.textContent = c.name;
+      const dim = document.createElement('div');
+      dim.className = 'pdim';
+      dim.textContent = texDimsCache.get(dimKey(c.name)) || '';
       const star = document.createElement('button');
       star.className = 'favbtn' + (favs.has(c.name) ? ' fav' : '');
       star.textContent = favs.has(c.name) ? '★' : '☆';
@@ -827,7 +853,7 @@ async function buildTextureBrowser(body, opts = {}) {
         ev.stopPropagation();
         openSetPopup(plus, c.name);
       });
-      cell.append(img, star, plus, label);
+      cell.append(img, star, plus, label, dim);
       cell.title = opts.libraryMode ? 'Click to file into collections' : 'Click to use as replacement';
       cell.addEventListener('click', () => {
         if (opts.libraryMode) openSetPopup(plus, c.name);
@@ -849,12 +875,12 @@ async function buildTextureBrowser(body, opts = {}) {
   const appendBatch = () => {
     const grid = $('pickGrid');
     sentinel.remove();
-    for (const c of matchesCache.slice(rendered, rendered + BATCH)) {
-      grid.appendChild(makeCell(c));
-    }
+    const batch = matchesCache.slice(rendered, rendered + BATCH);
+    const cells = batch.map(c => grid.appendChild(makeCell(c)));
     rendered = Math.min(rendered + BATCH, matchesCache.length);
     if (rendered < matchesCache.length) grid.after(sentinel);
     updateCount();
+    fillDims(batch, cells);
   };
 
   new IntersectionObserver(entries => {

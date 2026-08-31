@@ -7,7 +7,7 @@ import { parseBsp, extractBspGeometry, flagNames } from './bsp.js';
 import { decodePcx, decodeImage } from './decoders.js';
 import { encodePng, resizeRgba } from './thumbs.js';
 import { flatImage } from './gen.js';
-import { makeThumbPng, resolveImage, TEXTURE_EXTS, TEXTURE_EXTS_LOW } from './thumbs.js';
+import { makeThumbPng, resolveImage, sizeOf, TEXTURE_EXTS, TEXTURE_EXTS_LOW } from './thumbs.js';
 import { imageSize } from './decoders.js';
 import { SwapStore } from './swaps.js';
 
@@ -201,6 +201,24 @@ export class Install {
       .map(([name, v]) => ({ name, ext: v.ext, source: v.source }))
       .sort((a, b) => a.name.localeCompare(b.name, 'en'));
     return this.texCatalog;
+  }
+
+  // Dimensions for a batch of picker textures, probed lazily (reading every
+  // texture up front takes ~25s on a big install) and cached per name.
+  texDims(names, lowRes = false) {
+    if (!this.dimsCache) this.dimsCache = new Map();
+    const exts = lowRes ? TEXTURE_EXTS_LOW : TEXTURE_EXTS;
+    const pre = lowRes ? 'L|' : 'H|';
+    const out = {};
+    for (const name of names.slice(0, 400)) {
+      let d = this.dimsCache.get(pre + name);
+      if (d === undefined) {
+        d = sizeOf(this.fs, 'textures/' + name, exts) || null;
+        this.dimsCache.set(pre + name, d);
+      }
+      if (d) out[name] = { w: d.w, h: d.h, ext: d.ext };
+    }
+    return out;
   }
 
   // All skyboxes (env/<name><face>.<ext> sets).

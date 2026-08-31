@@ -101,6 +101,10 @@ async function handleApi(req, url, res) {
         const result = inst.swaps.setCustomSwap(body.map, body.from, body.filename, buf);
         return json(res, 200, { ok: true, ...result, detail: inst.mapDetail(body.map, lowRes) });
       }
+      case '/api/texdims': {
+        if (!Array.isArray(body.names)) return json(res, 400, { error: 'need names[]' });
+        return json(res, 200, { dims: inst.texDims(body.names.map(String), lowRes) });
+      }
       case '/api/favtex': {
         if (!body.name) return json(res, 400, { error: 'need name' });
         const favTextures = inst.swaps.setFavTexture(body.name, Boolean(body.fav));

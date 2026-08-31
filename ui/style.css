@@ -789,6 +789,13 @@ footer code { color: var(--accent-hi); font-family: var(--mono); }
   line-height: 1.4;
 }
 .pickcell.current .pname { color: var(--accent-hi); }
+.pickcell .pdim {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--faint);
+  padding: 0 6px 5px;
+  line-height: 1;
+}
 
 .favbtn {
   position: absolute;
