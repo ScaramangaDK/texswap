@@ -66,6 +66,8 @@ Stack: **Electron** (Node backend + web UI) → portable .exe (~90 MB), and the 
 
 - **2026-08-31 — Milestone 3 done**: named presets per map (save/load/delete chips), export to `texswap/exports/<map>.aq2swap.json` for Discord sharing, import with validation (missing replacement textures skipped with warnings, unknown maps stored for later), and a master "Swaps: ON/OFF" toggle that parks every map at stock while keeping all presets. Verified end-to-end incl. export→import roundtrip.
 
+- **2026-08-31 — Feedback round 1** (user request): fixed grid pattern (lines now centered per tile → true symmetric grid, previews and tiling both clean); added checker/stripes/diagonal patterns with visual style buttons; Flat tab now also offers the user's **ralle_colors** Quake-palette WALs (246 flats in `action/textures/ralle_colors`) as a clickable palette; folder **Browse…** dialog with "looks like an AQ2 install" detection plus a **?** help popup for the path; active preset chip is highlighted.
+
 ## Verified engine facts (tested against AQtion q2proded + source, 2026-08-31)
 
 - **`softlink` is fallback-only** — it fires only when the requested file does not exist. **`link` (hard) expands before the file search and overrides existing files → the app uses `link`.** Same syntax; `unlink --all` clears only hard links (AQtion's shipped soft links live in a separate list — clean namespace separation).

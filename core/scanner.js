@@ -165,6 +165,7 @@ export class Install {
       skySwap: skySwap ? skySwap.to : null,
       swapCount: this.swaps.swapCount(mapName),
       savedPresets: this.swaps.savedPresetNames(mapName),
+      activePreset: this.swaps.activePreset(mapName),
       swapsEnabled: this.swaps.enabled,
       extended: parsed.extended,
       warnings: parsed.warnings,

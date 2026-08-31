@@ -297,8 +297,8 @@ function renderPresetRow() {
 
   for (const name of d.savedPresets || []) {
     const chip = document.createElement('span');
-    chip.className = 'chip';
-    chip.title = `Load preset "${name}"`;
+    chip.className = 'chip' + (d.activePreset === name ? ' current' : '');
+    chip.title = d.activePreset === name ? `Preset "${name}" is active` : `Load preset "${name}"`;
     const txt = document.createElement('span');
     txt.textContent = name;
     const del = document.createElement('button');
@@ -606,26 +606,52 @@ async function renderStockTab(t) {
   render();
 }
 
-function renderFlatTab(t) {
+const FLAT_STYLES = [
+  { id: 'solid', label: 'solid' },
+  { id: 'grid', label: 'grid' },
+  { id: 'checker', label: 'checker' },
+  { id: 'stripes', label: 'stripes' },
+  { id: 'diag', label: 'diagonal' },
+];
+
+async function renderFlatTab(t) {
   const cur = t.swap && t.swap.type === 'flat' ? t.swap : null;
+  let color = cur ? cur.color : '#9aa0a8';
+  let style = cur && cur.style ? cur.style : 'solid';
   const body = $('mbody');
   body.innerHTML = `
-    <p style="color:var(--dim);margin-bottom:12px">Replace with a generated flat texture — great for visibility. “Grid” adds subtle lines so you can still judge distance and speed.</p>
+    <p style="color:var(--dim);margin-bottom:12px">Replace with a generated flat texture — great for visibility. Patterns add subtle lines so you can still judge distance and speed.</p>
+    <div class="stylerow" id="styleRow"></div>
     <div class="swatches" id="swatches"></div>
     <div class="flatrow">
-      <label>Custom: <input type="color" id="flatColor" value="${cur ? cur.color : '#9aa0a8'}"></label>
-      <label><input type="radio" name="flatstyle" value="solid" ${!cur || cur.style !== 'grid' ? 'checked' : ''}> solid</label>
-      <label><input type="radio" name="flatstyle" value="grid" ${cur && cur.style === 'grid' ? 'checked' : ''}> grid</label>
+      <label>Custom: <input type="color" id="flatColor" value="${color}"></label>
       <img id="flatPreview" class="flatpreview" alt="preview">
       <button class="primary" id="flatApply">Use this</button>
     </div>
+    <div id="ralleSection"></div>
   `;
   const colorInput = $('flatColor');
   const preview = $('flatPreview');
-  const styleOf = () => body.querySelector('input[name=flatstyle]:checked').value;
-  const updatePreview = () => {
-    preview.src = thumbUrl({ flat: colorInput.value, style: styleOf(), size: 96 });
+  const styleRow = $('styleRow');
+
+  const renderStyles = () => {
+    styleRow.textContent = '';
+    for (const s of FLAT_STYLES) {
+      const b = document.createElement('button');
+      b.className = 'stylebtn' + (s.id === style ? ' sel' : '');
+      const img = document.createElement('img');
+      img.src = thumbUrl({ flat: colorInput.value, style: s.id, size: 52 });
+      const label = document.createElement('span');
+      label.textContent = s.label;
+      b.append(img, label);
+      b.addEventListener('click', () => { style = s.id; renderStyles(); updatePreview(); });
+      styleRow.appendChild(b);
+    }
   };
+  const updatePreview = () => {
+    preview.src = thumbUrl({ flat: colorInput.value, style, size: 96 });
+  };
+
   const sw = $('swatches');
   for (const c of SWATCHES) {
     const b = document.createElement('button');
@@ -636,17 +662,56 @@ function renderFlatTab(t) {
       colorInput.value = c;
       sw.querySelectorAll('.swatch').forEach(x => x.classList.remove('sel'));
       b.classList.add('sel');
+      renderStyles();
       updatePreview();
     });
     sw.appendChild(b);
   }
-  colorInput.addEventListener('input', updatePreview);
-  body.querySelectorAll('input[name=flatstyle]').forEach(r => r.addEventListener('change', updatePreview));
+  colorInput.addEventListener('input', () => { renderStyles(); updatePreview(); });
   $('flatApply').addEventListener('click', () => {
     closeModal();
-    setSwap(t.name, { type: 'flat', color: colorInput.value, style: styleOf() });
+    setSwap(t.name, { type: 'flat', color: colorInput.value, style });
   });
+  renderStyles();
   updatePreview();
+
+  // Quake-palette flats (ralle_colors) if this install has them
+  const catalog = await ensureCatalog();
+  const ralle = catalog.filter(c => c.name.startsWith('ralle_colors/'));
+  if (ralle.length) {
+    const fam = /^ralle_colors\/([a-z]+)(\d+)$/i;
+    ralle.sort((a, b) => {
+      const ma = fam.exec(a.name), mb = fam.exec(b.name);
+      if (ma && mb) {
+        return ma[1].localeCompare(mb[1]) || (Number(ma[2]) - Number(mb[2]));
+      }
+      return a.name.localeCompare(b.name);
+    });
+    const section = $('ralleSection');
+    const head = document.createElement('div');
+    head.className = 'sectionhead';
+    head.textContent = `Quake palette — ralle_colors (${ralle.length})`;
+    const grid = document.createElement('div');
+    grid.className = 'pickgrid';
+    for (const c of ralle) {
+      const cell = document.createElement('div');
+      cell.className = 'pickcell' + (t.swap && t.swap.type === 'stock' && t.swap.to === c.name ? ' current' : '');
+      const img = document.createElement('img');
+      img.loading = 'lazy';
+      img.src = thumbUrl({ tex: c.name, size: 64 });
+      img.addEventListener('error', () => { img.style.visibility = 'hidden'; });
+      const label = document.createElement('div');
+      label.className = 'pname';
+      label.textContent = c.name.slice('ralle_colors/'.length);
+      cell.append(img, label);
+      cell.addEventListener('click', () => {
+        closeModal();
+        setSwap(t.name, { type: 'stock', to: c.name });
+      });
+      grid.appendChild(cell);
+    }
+    section.append(head, grid);
+  }
 }
 
 async function openSkyPicker() {
@@ -702,6 +767,96 @@ async function openSkyPicker() {
 
 // ---------- wiring ----------
 
+// ---------- folder browser & help ----------
+
+async function openBrowser(startPath) {
+  openModal(`
+    <div class="mhead">
+      <h3>Pick your AQ2 folder</h3>
+      <button class="mclose">✕</button>
+    </div>
+    <div class="mbody">
+      <div class="bpath" id="bPath"></div>
+      <div class="browselist" id="bList"></div>
+      <div class="bhint hidden" id="bHint">✓ This looks like an AQ2 install</div>
+    </div>
+    <div class="mfoot">
+      <button id="bUp">⬆ Up one level</button>
+      <button class="primary" id="bUse" disabled>Use this folder</button>
+    </div>
+  `);
+  let current = null;
+  let parent = null;
+
+  const load = async p => {
+    const url = new URL('/api/browse', location.origin);
+    if (p) url.searchParams.set('path', p);
+    let r;
+    try {
+      r = await fetch(url).then(async x => {
+        const b = await x.json();
+        if (!x.ok) throw new Error(b.error);
+        return b;
+      });
+    } catch (e) {
+      toast(e.message, true);
+      return;
+    }
+    current = r.path;
+    parent = r.parent;
+    $('bPath').textContent = current || 'This PC — pick a drive';
+    $('bHint').classList.toggle('hidden', !r.looksLikeInstall);
+    $('bUse').disabled = !current;
+    $('bUp').disabled = !parent && !current;
+    const list = $('bList');
+    list.textContent = '';
+    for (const d of r.dirs) {
+      const item = document.createElement('div');
+      item.className = 'bitem';
+      item.textContent = '📁 ' + d.name;
+      item.addEventListener('click', () => load(d.path));
+      list.appendChild(item);
+    }
+    if (!r.dirs.length) {
+      const empty = document.createElement('div');
+      empty.className = 'bitem';
+      empty.style.cursor = 'default';
+      empty.textContent = '(no subfolders)';
+      list.appendChild(empty);
+    }
+  };
+
+  $('bUp').addEventListener('click', () => load(parent));
+  $('bUse').addEventListener('click', () => {
+    if (!current) return;
+    closeModal();
+    $('dirInput').value = current;
+    rescan(true);
+  });
+  await load(startPath || $('dirInput').value.trim() || null);
+}
+
+function openHelp() {
+  openModal(`
+    <div class="mhead">
+      <h3>Which folder should the path point to?</h3>
+      <button class="mclose">✕</button>
+    </div>
+    <div class="mbody helpbody">
+      <p>Point it at your <b>AQ2 / AQtion install folder</b> — the one that contains
+      <code>q2pro.exe</code> or <code>aqtion.exe</code>, with subfolders like
+      <code>action</code> and <code>baseaq</code> inside.</p>
+      <p>Example: <code>C:\\AQ2mapping\\AQ2</code></p>
+      <p>Pointing directly at a game folder (<code>…\\action</code> or <code>…\\baseaq</code>)
+      also works — the app finds the install root by itself.</p>
+      <p>After changing the path, click <b>Rescan</b>. The app reads your maps and textures
+      from there, and writes its swap files into that install's <code>texswap</code> folder.</p>
+    </div>
+  `);
+}
+
+$('browseBtn').addEventListener('click', () => openBrowser());
+$('helpBtn').addEventListener('click', openHelp);
 $('rescanBtn').addEventListener('click', () => rescan(true));
 $('dirInput').addEventListener('keydown', e => { if (e.key === 'Enter') rescan(true); });
 $('mapSearch').addEventListener('input', renderMapList);

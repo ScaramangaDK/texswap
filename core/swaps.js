@@ -55,13 +55,20 @@ export class SwapStore {
     const e = this.mapEntry(mapName, true);
     if (spec === null) delete e.swaps[from];
     else e.swaps[from] = spec;
+    e.active = null; // working state diverged from any saved preset
     return this.#saveAndMaterialize();
   }
 
   setSky(mapName, to) {
     const e = this.mapEntry(mapName, true);
     e.sky = to ? { to } : null;
+    e.active = null;
     return this.#saveAndMaterialize();
+  }
+
+  activePreset(mapName) {
+    const e = this.data.maps[mapName];
+    return e && e.active ? e.active : null;
   }
 
   resetMap(mapName) {
@@ -90,6 +97,7 @@ export class SwapStore {
     const e = this.mapEntry(mapName, true);
     if (!e.saved) e.saved = {};
     e.saved[clean] = { swaps: structuredClone(e.swaps), sky: e.sky ? { ...e.sky } : null };
+    e.active = clean;
     fs.mkdirSync(this.dir, { recursive: true });
     fs.writeFileSync(this.file, JSON.stringify(this.data, null, 2));
     return clean;
@@ -100,6 +108,7 @@ export class SwapStore {
     if (!e || !e.saved || !e.saved[name]) throw new Error(`no preset "${name}" for ${mapName}`);
     e.swaps = structuredClone(e.saved[name].swaps);
     e.sky = e.saved[name].sky ? { ...e.saved[name].sky } : null;
+    e.active = name;
     return this.#saveAndMaterialize();
   }
 
@@ -181,10 +190,11 @@ export class SwapStore {
   // Ensure the gen file for a swap spec exists in the requested extension.
   // Returns the link target path (game-relative) or null on failure.
   #ensureGen(spec, ext, warnings) {
-    let fileBase, make;
+    let fileBase, make, alwaysWrite = false;
     if (spec.type === 'flat') {
       fileBase = `flat-${spec.color.replace('#', '')}-${spec.style || 'solid'}`;
       make = () => encodeAs(ext, flatImage(spec.color, spec.style), this.install.palette, fileBase);
+      alwaysWrite = true; // cheap to generate; guarantees pattern tweaks reach disk
     } else if (spec.type === 'stock') {
       fileBase = sanitize(spec.to);
       make = () => transcode(this.install.fs, this.install.palette, 'textures/' + spec.to, ext, fileBase);
@@ -194,7 +204,7 @@ export class SwapStore {
     }
     const relPath = `texswap/gen/${fileBase}${ext}`;
     const absPath = path.join(this.install.writeDir, 'texswap', 'gen', fileBase + ext);
-    if (!fs.existsSync(absPath)) {
+    if (alwaysWrite || !fs.existsSync(absPath)) {
       try {
         fs.writeFileSync(absPath, make());
       } catch (e) {

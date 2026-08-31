@@ -152,6 +152,31 @@ async function handleApi(req, url, res) {
       return json(res, 200, getInstall(dir).mapDetail(name));
     }
 
+    case '/api/browse': {
+      const p = q.get('path');
+      if (!p) {
+        const drives = [];
+        for (let c = 65; c <= 90; c++) {
+          const d = String.fromCharCode(c) + ':\\';
+          if (fs.existsSync(d)) drives.push({ name: d, path: d });
+        }
+        return json(res, 200, { path: null, parent: null, dirs: drives, looksLikeInstall: false });
+      }
+      const abs = path.resolve(p);
+      let items;
+      try { items = fs.readdirSync(abs, { withFileTypes: true }); }
+      catch (e) { return json(res, 400, { error: 'cannot open folder: ' + e.message }); }
+      const dirs = items
+        .filter(it => it.isDirectory())
+        .map(it => ({ name: it.name, path: path.join(abs, it.name) }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'en'));
+      const names = items.map(it => it.name.toLowerCase());
+      const looksLikeInstall = names.includes('action') || names.includes('baseaq') ||
+        names.some(n => n.endsWith('.pkz')) || names.includes('q2pro.exe') || names.includes('aqtion.exe');
+      const parent = path.dirname(abs) === abs ? null : path.dirname(abs);
+      return json(res, 200, { path: abs, parent, dirs, looksLikeInstall });
+    }
+
     case '/api/textures':
       return json(res, 200, { textures: getInstall(dir).listTextures() });
 

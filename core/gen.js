@@ -112,14 +112,34 @@ export function parseColor(hex) {
   return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
 }
 
+export const FLAT_STYLES = ['solid', 'grid', 'checker', 'stripes', 'diag'];
+
 export function flatImage(colorHex, style = 'solid', size = 128) {
   const [r, g, b] = parseColor(colorHex);
   const data = Buffer.alloc(size * size * 4);
   const dark = [Math.max(0, r - 28), Math.max(0, g - 28), Math.max(0, b - 28)];
+  const cell = Math.max(8, Math.round(size / 4));      // 32px cells at 128
+  const lw = Math.max(1, Math.round(size / 64));       // 2px lines at 128
+  const half = Math.floor(cell / 2);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      let px = [r, g, b];
-      if (style === 'grid' && (x % 32 < 1 || y % 32 < 1)) px = dark;
+      let isDark = false;
+      switch (style) {
+        case 'grid':
+          // lines centered in the tile so previews look symmetric and tiling stays seamless
+          isDark = ((x + half) % cell) < lw || ((y + half) % cell) < lw;
+          break;
+        case 'checker':
+          isDark = ((Math.floor(x / cell) + Math.floor(y / cell)) % 2) === 1;
+          break;
+        case 'stripes':
+          isDark = ((y + half) % cell) < lw;
+          break;
+        case 'diag':
+          isDark = (((x - y) % cell) + cell) % cell < lw;
+          break;
+      }
+      const px = isDark ? dark : [r, g, b];
       const o = (y * size + x) * 4;
       data[o] = px[0]; data[o + 1] = px[1]; data[o + 2] = px[2]; data[o + 3] = 255;
     }
