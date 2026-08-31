@@ -1365,10 +1365,15 @@ async function openMissingFix() {
       <p><label><input type="checkbox" id="mfEnabled"> <b>Apply in game across all maps</b></label></p>
       <div class="stylerow" id="mfStyles"></div>
       <div class="flatrow">
-        <label>Base: <input type="color" id="mfColor" value="${mf.color}"></label>
         <img id="mfPreview" class="flatpreview" alt="preview">
         <button class="primary" id="mfSave">Save</button>
       </div>
+      <div class="sectionhead">Base color</div>
+      <div class="flatrow">
+        <label>Custom: <input type="color" id="mfColor" value="${mf.color}"></label>
+      </div>
+      <p class="mnote" style="margin:6px 0 4px">…or pick from the Quake 2 palette:</p>
+      <div class="palgrid" id="mfPalBase"></div>
       <div class="sectionhead">Pattern color</div>
       <div class="flatrow">
         <label><input type="checkbox" id="mfAuto"> auto (darker shade of the base)</label>
@@ -1399,6 +1404,8 @@ async function openMissingFix() {
     $('mfPreview').src = thumbUrl(thumbParams(mf.style, 96));
     $('mfPal').querySelectorAll('.palswatch').forEach(x =>
       x.classList.toggle('sel', !!mf.color2 && x.dataset.c === mf.color2));
+    $('mfPalBase').querySelectorAll('.palswatch').forEach(x =>
+      x.classList.toggle('sel', x.dataset.c === colorInput.value.toLowerCase()));
     const row = $('mfStyles');
     row.textContent = '';
     for (const s of FLAT_STYLES) {
@@ -1416,15 +1423,19 @@ async function openMissingFix() {
   try {
     const pal = await fetch(`/api/palette?dir=${encodeURIComponent(state.dir)}`).then(r => r.json());
     for (const c of pal.colors || []) {
-      const b = document.createElement('button');
-      b.className = 'palswatch';
-      b.style.background = c;
-      b.title = c;
-      b.dataset.c = c;
-      b.addEventListener('click', () => { mf.color2 = c; sync(); });
-      $('mfPal').appendChild(b);
+      const mkSwatch = onPick => {
+        const b = document.createElement('button');
+        b.className = 'palswatch';
+        b.style.background = c;
+        b.title = c;
+        b.dataset.c = c;
+        b.addEventListener('click', onPick);
+        return b;
+      };
+      $('mfPalBase').appendChild(mkSwatch(() => { colorInput.value = c; sync(); }));
+      $('mfPal').appendChild(mkSwatch(() => { mf.color2 = c; sync(); }));
     }
-  } catch { /* color input still works */ }
+  } catch { /* color inputs still work */ }
   colorInput.addEventListener('input', sync);
   autoBox.addEventListener('change', () => { mf.color2 = autoBox.checked ? null : color2Input.value; sync(); });
   color2Input.addEventListener('input', () => { mf.color2 = color2Input.value; sync(); });
