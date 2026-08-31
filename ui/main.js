@@ -157,6 +157,12 @@ function renderHook() {
   toggle.addEventListener('click', toggleEnabled);
   area.appendChild(toggle);
 
+  const lib = document.createElement('button');
+  lib.textContent = '📂 Collections';
+  lib.title = 'Browse all textures, star favorites, organize named collections';
+  lib.addEventListener('click', openTextureLibrary);
+  area.appendChild(lib);
+
   const light = document.createElement('button');
   const managed = state.scan.lighting && state.scan.lighting.manage;
   light.innerHTML = managed ? '🌍 Lighting<span class="dot"></span>' : '🌍 Lighting';
@@ -666,8 +672,18 @@ function renderCustomTab(t) {
 }
 
 async function renderStockTab(t) {
-  const body = $('mbody');
+  await buildTextureBrowser($('mbody'), {
+    exclude: t.name,
+    currentTo: t.swap && t.swap.type === 'stock' ? t.swap.to : null,
+    onPick: name => { closeModal(); setSwap(t.name, { type: 'stock', to: name }); },
+  });
+}
+
+// Shared texture browser: used by the swap picker (onPick swaps) and by the
+// standalone Collections library (clicking files a texture into collections).
+async function buildTextureBrowser(body, opts = {}) {
   body.innerHTML = `
+    ${opts.libraryMode ? '<p style="color:var(--dim);font-size:12.5px;margin-bottom:10px">Browse every texture in the install. ☆ stars a favorite; ＋ (or clicking a texture) files it into named collections. Use the dropdown to view a collection.</p>' : ''}
     <div class="mtools">
       <input id="pickSearch" type="search" placeholder="Search textures…">
       <select id="viewSel"></select>
@@ -679,8 +695,9 @@ async function renderStockTab(t) {
   const catalog = await ensureCatalog();
   const search = $('pickSearch');
   const viewSel = $('viewSel');
-  const favs = new Set((state.detail && state.detail.favTextures) || []);
-  let sets = { ...((state.detail && state.detail.favSets) || {}) };
+  const src = state.scan || state.detail || {};
+  const favs = new Set(src.favTextures || []);
+  let sets = { ...(src.favSets || {}) };
   let view = localStorage.getItem('aq2ts.stockview') || 'all';
 
   const rebuildViewSel = () => {
@@ -707,7 +724,7 @@ async function renderStockTab(t) {
     const q = search.value.trim().toLowerCase();
     const grid = $('pickGrid');
     grid.textContent = '';
-    let matches = catalog.filter(c => c.name !== t.name && (!q || c.name.includes(q)));
+    let matches = catalog.filter(c => c.name !== opts.exclude && (!q || c.name.includes(q)));
     if (view === 'favs') matches = matches.filter(c => favs.has(c.name));
     else if (view.startsWith('set:')) {
       const members = new Set(sets[view.slice(4)] || []);
@@ -717,7 +734,7 @@ async function renderStockTab(t) {
       (favs.has(b.name) - favs.has(a.name)) || a.name.localeCompare(b.name));
     for (const c of matches.slice(0, 240)) {
       const cell = document.createElement('div');
-      cell.className = 'pickcell' + (t.swap && t.swap.type === 'stock' && t.swap.to === c.name ? ' current' : '');
+      cell.className = 'pickcell' + (opts.currentTo === c.name ? ' current' : '');
       const img = document.createElement('img');
       img.loading = 'lazy';
       img.src = thumbUrl({ tex: c.name, size: 96 });
@@ -736,7 +753,9 @@ async function renderStockTab(t) {
           const r = await apiPost('/api/favtex', { name: c.name, fav: nowFav });
           favs.clear();
           for (const f of r.favTextures) favs.add(f);
-          if (state.detail) state.detail.favTextures = r.favTextures;
+          for (const holder of [state.scan, state.detail]) {
+            if (holder) holder.favTextures = r.favTextures;
+          }
           star.textContent = nowFav ? '★' : '☆';
           star.classList.toggle('fav', nowFav);
         } catch (e) { toast('Favorite failed: ' + e.message, true); }
@@ -750,9 +769,10 @@ async function renderStockTab(t) {
         openSetPopup(plus, c.name);
       });
       cell.append(img, star, plus, label);
+      cell.title = opts.libraryMode ? 'Click to file into collections' : 'Click to use as replacement';
       cell.addEventListener('click', () => {
-        closeModal();
-        setSwap(t.name, { type: 'stock', to: c.name });
+        if (opts.libraryMode) openSetPopup(plus, c.name);
+        else if (opts.onPick) opts.onPick(c.name);
       });
       grid.appendChild(cell);
     }
@@ -776,7 +796,9 @@ async function renderStockTab(t) {
     sets = r.favSets;
     favs.clear();
     for (const f of r.favTextures) favs.add(f);
-    if (state.detail) { state.detail.favSets = r.favSets; state.detail.favTextures = r.favTextures; }
+    for (const holder of [state.scan, state.detail]) {
+      if (holder) { holder.favSets = r.favSets; holder.favTextures = r.favTextures; }
+    }
     return r;
   };
   const openSetPopup = (anchor, texName) => {
@@ -1059,6 +1081,20 @@ async function openSkyPicker() {
 }
 
 // ---------- wiring ----------
+
+// ---------- texture library (standalone collections manager) ----------
+
+function openTextureLibrary() {
+  openModal(`
+    <div class="mhead">
+      <h3>📂 Texture collections</h3>
+      <button class="mclose">✕</button>
+    </div>
+    <div class="mbody" id="libBody"><p style="color:var(--dim)">Loading textures…</p></div>
+  `);
+  buildTextureBrowser($('libBody'), { libraryMode: true })
+    .catch(e => toast('Could not load textures: ' + e.message, true));
+}
 
 // ---------- lighting ----------
 

@@ -50,6 +50,8 @@ function scanResult(inst) {
     hook: inst.swaps.hookStatus(),
     swapsEnabled: inst.swaps.enabled,
     lighting: inst.swaps.lightingConfig(),
+    favTextures: inst.swaps.favTextures(),
+    favSets: inst.swaps.favSets(),
     maps: inst.listMaps(),
   };
 }
