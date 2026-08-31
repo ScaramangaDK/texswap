@@ -212,8 +212,18 @@ async function handleApi(req, url, res) {
         const { obj, file } = inst.swaps.exportMap(body.map);
         return json(res, 200, { ok: true, file, data: obj });
       }
+      case '/api/exportpack': {
+        try {
+          if (body.list) return json(res, 200, { ok: true, maps: inst.swaps.packableMaps() });
+          return json(res, 200, { ok: true, ...inst.swaps.exportPack(body.maps || null) });
+        } catch (e) {
+          return json(res, 400, { error: e.message });
+        }
+      }
       case '/api/import': {
-        const result = inst.swaps.importMap(body.data);
+        const result = body.data && body.data.kind === 'pack'
+          ? inst.swaps.importPack(body.data)
+          : inst.swaps.importMap(body.data);
         return json(res, 200, { ok: true, ...result });
       }
       default:

@@ -324,19 +324,20 @@ export class SwapStore {
     fs.writeFileSync(this.file, JSON.stringify(this.data, null, 2));
   }
 
-  // Export the map's current working state as a shareable object; also writes
-  // it to texswap/exports/ so the user has a file to send to friends.
-  exportMap(mapName) {
+  // The map's current working state as a shareable object (null if empty).
+  // texturesOnly (team packs): just the swaps - sky and lighting are
+  // personal taste and stay out of shared packs.
+  #exportObj(mapName, texturesOnly = false) {
     const { swaps, sky } = this.swapsFor(mapName);
-    const lighting = this.mapLighting(mapName);
-    if (!Object.keys(swaps).length && !sky && !lighting) throw new Error('nothing to export - no swaps on this map');
+    const lighting = texturesOnly ? null : this.mapLighting(mapName);
+    if (!Object.keys(swaps).length && (texturesOnly || (!sky && !lighting))) return null;
     const obj = {
       app: 'aq2-texture-swapper',
       format: 1,
       exported: new Date().toISOString(),
       map: mapName,
       swaps,
-      sky,
+      sky: texturesOnly ? null : sky,
       lighting,
     };
     // embed uploaded images so the file is fully shareable
@@ -349,6 +350,14 @@ export class SwapStore {
       }
     }
     if (Object.keys(customFiles).length) obj.customFiles = customFiles;
+    return obj;
+  }
+
+  // Export the map's current working state as a shareable object; also writes
+  // it to texswap/exports/ so the user has a file to send to friends.
+  exportMap(mapName) {
+    const obj = this.#exportObj(mapName);
+    if (!obj) throw new Error('nothing to export - no swaps on this map');
     const dir = path.join(this.dir, 'exports');
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, `${mapName}.aq2swap.json`);
@@ -356,7 +365,58 @@ export class SwapStore {
     return { obj, file };
   }
 
-  importMap(obj) {
+  // Every map that currently has texture swaps worth sharing.
+  packableMaps() {
+    return Object.keys(this.data.maps)
+      .filter(n => this.#exportObj(n, true) !== null)
+      .sort();
+  }
+
+  // Team pack: the texture swaps of every customized map (or a chosen
+  // subset) in one file - no sky or lighting, people keep their own.
+  exportPack(mapNames = null) {
+    const names = mapNames && mapNames.length ? mapNames : this.packableMaps();
+    const maps = [];
+    for (const n of names) {
+      const one = this.#exportObj(n, true);
+      if (one) maps.push(one);
+    }
+    if (!maps.length) throw new Error('nothing to export - no maps have texture swaps');
+    const obj = {
+      app: 'aq2-texture-swapper',
+      kind: 'pack',
+      format: 1,
+      exported: new Date().toISOString(),
+      maps,
+    };
+    const dir = path.join(this.dir, 'exports');
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, 'teampack.aq2pack.json');
+    fs.writeFileSync(file, JSON.stringify(obj, null, 2));
+    return { file, count: maps.length, maps: maps.map(m => m.map) };
+  }
+
+  importPack(obj) {
+    if (!obj || obj.app !== 'aq2-texture-swapper' || obj.kind !== 'pack' || !Array.isArray(obj.maps)) {
+      throw new Error('not a valid .aq2pack.json team pack file');
+    }
+    const warnings = [];
+    const imported = [];
+    for (const one of obj.maps.slice(0, 500)) {
+      try {
+        const r = this.importMap(one, true);
+        imported.push(r.map);
+        warnings.push(...(r.warnings || []));
+      } catch (e) {
+        warnings.push(`${one && one.map ? one.map : 'a map'}: ${e.message}`);
+      }
+    }
+    return { pack: true, count: imported.length, maps: imported, warnings };
+  }
+
+  // texturesOnly (pack entries): apply the swaps but leave the receiver's
+  // own sky and lighting on that map untouched.
+  importMap(obj, texturesOnly = false) {
     if (!obj || obj.app !== 'aq2-texture-swapper' || !obj.map || typeof obj.swaps !== 'object') {
       throw new Error('not a valid .aq2swap.json preset file');
     }
@@ -390,9 +450,11 @@ export class SwapStore {
     }
     const e = this.mapEntry(obj.map, true);
     e.swaps = swaps;
-    e.sky = obj.sky && obj.sky.to ? { to: obj.sky.to } : null;
-    const impLighting = cleanCvarMap(obj.lighting);
-    e.lighting = Object.keys(impLighting).length ? impLighting : null;
+    if (!texturesOnly) {
+      e.sky = obj.sky && obj.sky.to ? { to: obj.sky.to } : null;
+      const impLighting = cleanCvarMap(obj.lighting);
+      e.lighting = Object.keys(impLighting).length ? impLighting : null;
+    }
     const result = this.#saveAndMaterialize();
     return { map: obj.map, known, warnings: warnings.concat(result.warnings), written: result.written };
   }

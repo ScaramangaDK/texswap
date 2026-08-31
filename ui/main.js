@@ -258,9 +258,51 @@ function renderHook() {
 
   const imp = document.createElement('button');
   imp.textContent = 'Import preset…';
-  imp.title = 'Load a .aq2swap.json file from a friend';
+  imp.title = 'Load a .aq2swap.json or .aq2pack.json file from a friend';
   imp.addEventListener('click', () => $('importFile').click());
   area.appendChild(imp);
+
+  const pack = document.createElement('button');
+  pack.textContent = '🎁 Export pack…';
+  pack.title = 'Bundle the texture swaps of every map you have customized into one shareable file (sky and lighting stay personal)';
+  pack.addEventListener('click', openExportPack);
+  area.appendChild(pack);
+}
+
+async function openExportPack() {
+  let maps;
+  try {
+    maps = (await apiPost('/api/exportpack', { list: true })).maps;
+  } catch (e) {
+    toast('Could not list maps: ' + e.message, true);
+    return;
+  }
+  if (!maps.length) {
+    toast('Nothing to pack yet - swap some textures first', true);
+    return;
+  }
+  openModal(`
+    <div class="mhead">
+      <h3>🎁 Export team pack</h3>
+      <button class="mclose">✕</button>
+    </div>
+    <div class="mbody">
+      <p class="mnote">One file with the <b>texture swaps</b> of every map below — sky and lighting
+      are individual preference and stay out. Friends load it with <b>Import preset…</b> and their
+      own sky/lighting are untouched.</p>
+      <p class="mono" style="line-height:1.9">${maps.map(m => `<span class="badge">${m}</span>`).join(' ')}</p>
+      <div class="mfoot"><button class="primary" id="packGo">Create pack (${maps.length} map${maps.length === 1 ? '' : 's'})</button></div>
+    </div>
+  `);
+  $('packGo').addEventListener('click', async () => {
+    try {
+      const r = await apiPost('/api/exportpack', {});
+      closeModal();
+      toast(`Packed ${r.count} maps! Send this file to your friends: ${r.file}`);
+    } catch (e) {
+      toast('Pack failed: ' + e.message, true);
+    }
+  });
 }
 
 async function toggleEnabled() {
@@ -288,10 +330,17 @@ async function importPresetFile(file) {
   }
   try {
     const r = await apiPost('/api/import', { data });
-    for (const w of r.warnings || []) toast(w, true);
-    toast(`Imported preset for "${r.map}"`);
-    if (state.scan && state.scan.maps.some(m => m.name === r.map)) {
-      await selectMap(r.map);
+    for (const w of (r.warnings || []).slice(0, 6)) toast(w, true);
+    if (r.pack) {
+      toast(`Imported team pack: texture swaps for ${r.count} map${r.count === 1 ? '' : 's'}`);
+      if (state.detail && r.maps && r.maps.includes(state.detail.name)) {
+        await selectMap(state.detail.name);
+      }
+    } else {
+      toast(`Imported preset for "${r.map}"`);
+      if (state.scan && state.scan.maps.some(m => m.name === r.map)) {
+        await selectMap(r.map);
+      }
     }
   } catch (e) {
     toast('Import failed: ' + e.message, true);
@@ -1748,7 +1797,9 @@ function openGuide() {
       <div class="sectionhead">5 · Presets &amp; sharing</div>
       <p><b>Save as preset…</b> keeps named setups per map (chips to switch).
       <b>Export…</b> writes a <code>.aq2swap.json</code> file to send to friends — they use
-      <b>Import preset…</b>. Custom images travel inside the file.</p>
+      <b>Import preset…</b>. Custom images travel inside the file.
+      <b>🎁 Export pack…</b> (top bar) bundles the texture swaps of every customized map into
+      one <code>.aq2pack.json</code> — sky and lighting stay personal.</p>
 
       <div class="sectionhead">6 · Collections &amp; favorites</div>
       <p>In <b>📂 Collections</b> (or any picker): ★ marks favorites, ＋ files textures into
