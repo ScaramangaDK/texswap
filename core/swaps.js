@@ -37,16 +37,6 @@ function cleanCvarMap(obj) {
   return out;
 }
 
-// A custom image that is nearly all transparent is the removed "invisible"
-// cheat in disguise; legit cutout textures (fences, leaves) keep well under
-// this. Checked on upload and on preset import.
-function mostlyTransparent(img) {
-  const d = img.data;
-  let clear = 0;
-  for (let i = 3; i < d.length; i += 4) if (d[i] < 8) clear++;
-  return clear / (img.width * img.height) > 0.9;
-}
-
 // Per-user data root: presets survive game reinstalls/deletions here.
 function appDataRoot() {
   const base = process.env.APPDATA || path.join(process.env.USERPROFILE || '.', '.config');
@@ -131,9 +121,6 @@ export class SwapStore {
       throw new Error('unsupported image type ' + (ext || '(none)') + ' - use png, jpg or tga');
     }
     const img = decodeImage(buf, ext, this.install.palette);
-    if (mostlyTransparent(img)) {
-      throw new Error('image is almost fully transparent - invisible replacements are not allowed (cheat risk)');
-    }
     const master = encodePngFile(img);
     const hash = crypto.createHash('sha1').update(master).digest('hex').slice(0, 8);
     const rel = `custom/${sanitize(from)}-${hash}.png`;
@@ -366,19 +353,9 @@ export class SwapStore {
           warnings.push(`custom image for ${from} missing from the file - skipped`);
           continue;
         }
-        const buf = Buffer.from(b64, 'base64');
-        try {
-          if (mostlyTransparent(decodeImage(buf, '.png', this.install.palette))) {
-            warnings.push(`custom image for ${from} is almost fully transparent - skipped (cheat risk)`);
-            continue;
-          }
-        } catch {
-          warnings.push(`custom image for ${from} is not a readable png - skipped`);
-          continue;
-        }
         const abs = path.join(this.dataDir, spec.file);
         fs.mkdirSync(path.dirname(abs), { recursive: true });
-        fs.writeFileSync(abs, buf);
+        fs.writeFileSync(abs, Buffer.from(b64, 'base64'));
         swaps[from] = spec;
       }
     }
