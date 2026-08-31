@@ -217,22 +217,28 @@ export function extractBspGeometry(buf) {
   const faceStride = extended ? 28 : 20;
   const numFaces = Math.floor(fl.len / faceStride);
 
+  const ll = lumps[7]; // lighting lump: 3-byte RGB luxels
+
   const SKIP_FLAGS = 4 | 128; // SURF_SKY | SURF_NODRAW
+  const SURF_WARP = 8;
   const SKIP_NAMES = /(^|\/)(clip|hint|skip|trigger|origin|null)$/;
-  const groups = new Map();
   const bounds = { min: [1e9, 1e9, 1e9], max: [-1e9, -1e9, -1e9] };
 
+  // pass 1: gather faces with texel UVs and lightmap block info
+  const facesOut = [];
   for (let i = 0; i < numFaces; i++) {
     const p = fl.ofs + i * faceStride;
-    let firstEdge, numFEdges, texinfoIdx;
+    let firstEdge, numFEdges, texinfoIdx, lightofs;
     if (extended) {
       firstEdge = buf.readInt32LE(p + 8);
       numFEdges = buf.readInt32LE(p + 12);
       texinfoIdx = buf.readInt32LE(p + 16);
+      lightofs = buf.readInt32LE(p + 24);
     } else {
       firstEdge = buf.readInt32LE(p + 4);
       numFEdges = buf.readUInt16LE(p + 8);
       texinfoIdx = buf.readUInt16LE(p + 10);
+      lightofs = buf.readInt32LE(p + 16);
     }
     const info = texinfos[texinfoIdx];
     if (!info || numFEdges < 3 || numFEdges > 128) continue;
@@ -250,33 +256,98 @@ export function extractBspGeometry(buf) {
       const [a, b] = edge(ei);
       const vi = se >= 0 ? a : b;
       if (vi >= numVerts) { valid = false; break; }
-      poly.push(vert(vi));
-    }
-    if (!valid) continue;
-
-    let g = groups.get(info.name);
-    if (!g) {
-      g = { name: info.name, flags: 0, positions: [], uvs: [] };
-      groups.set(info.name, g);
-    }
-    g.flags |= info.flags;
-
-    const pushVert = pt => {
-      g.positions.push(Math.round(pt[0] * 10) / 10, Math.round(pt[1] * 10) / 10, Math.round(pt[2] * 10) / 10);
+      const pt = vert(vi);
       const tu = pt[0] * info.u[0] + pt[1] * info.u[1] + pt[2] * info.u[2] + info.u[3];
       const tv = pt[0] * info.v[0] + pt[1] * info.v[1] + pt[2] * info.v[2] + info.v[3];
-      g.uvs.push(Math.round(tu * 100) / 100, Math.round(tv * 100) / 100);
+      poly.push({ pt, tu, tv });
       for (let k = 0; k < 3; k++) {
         if (pt[k] < bounds.min[k]) bounds.min[k] = pt[k];
         if (pt[k] > bounds.max[k]) bounds.max[k] = pt[k];
       }
-    };
-    for (let t = 1; t + 1 < poly.length; t++) {
-      pushVert(poly[0]);
-      pushVert(poly[t]);
-      pushVert(poly[t + 1]);
+    }
+    if (!valid) continue;
+
+    // lightmap block (style-0) dims from texel extents, 16 texels per luxel
+    let lm = null;
+    if (lightofs >= 0 && ll.len > 0 && !(info.flags & SURF_WARP)) {
+      let umin = Infinity, umax = -Infinity, vmin = Infinity, vmax = -Infinity;
+      for (const v of poly) {
+        if (v.tu < umin) umin = v.tu;
+        if (v.tu > umax) umax = v.tu;
+        if (v.tv < vmin) vmin = v.tv;
+        if (v.tv > vmax) vmax = v.tv;
+      }
+      const smin = Math.floor(umin / 16), tmin = Math.floor(vmin / 16);
+      const w = Math.ceil(umax / 16) - smin + 1;
+      const h = Math.ceil(vmax / 16) - tmin + 1;
+      if (w > 0 && h > 0 && w <= 66 && h <= 66 && lightofs + w * h * 3 <= ll.len) {
+        lm = { w, h, ofs: lightofs, smin, tmin };
+      }
+    }
+    facesOut.push({ name: info.name, flags: info.flags, poly, lm });
+  }
+
+  // pass 2: shelf-pack lightmap blocks into one RGB atlas (1px padded)
+  const ATLAS_W = 1024;
+  const lit = facesOut.filter(f => f.lm).sort((a, b) => b.lm.h - a.lm.h);
+  let cx = 6, cy = 0, shelfH = 6; // (0,0)..(4,4) reserved as a white block
+  for (const f of lit) {
+    const bw = f.lm.w + 2, bh = f.lm.h + 2;
+    if (cx + bw > ATLAS_W) { cx = 0; cy += shelfH; shelfH = bh; }
+    if (bh > shelfH) shelfH = bh;
+    f.lm.ax = cx + 1;
+    f.lm.ay = cy + 1;
+    cx += bw;
+  }
+  let atlasH = 4;
+  for (let p2 = 4; p2 <= 8192; p2 *= 2) { if (p2 >= cy + shelfH) { atlasH = p2; break; } }
+  const atlas = Buffer.alloc(ATLAS_W * atlasH * 3, 255);
+  for (const f of lit) {
+    const { w, h, ofs, ax, ay } = f.lm;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const s = ll.ofs + ofs + (y * w + x) * 3;
+        const d = ((ay + y) * ATLAS_W + (ax + x)) * 3;
+        atlas[d] = buf[s];
+        atlas[d + 1] = buf[s + 1];
+        atlas[d + 2] = buf[s + 2];
+      }
     }
   }
 
-  return { extended, groups: [...groups.values()], spawns, bounds };
+  // pass 3: triangulate into per-texture groups with texture + lightmap UVs
+  const groups = new Map();
+  const whiteU = 2 / ATLAS_W, whiteV = 2 / atlasH;
+  for (const f of facesOut) {
+    let g = groups.get(f.name);
+    if (!g) {
+      g = { name: f.name, flags: 0, positions: [], uvs: [], luvs: [] };
+      groups.set(f.name, g);
+    }
+    g.flags |= f.flags;
+    const pushVert = v => {
+      g.positions.push(Math.round(v.pt[0] * 10) / 10, Math.round(v.pt[1] * 10) / 10, Math.round(v.pt[2] * 10) / 10);
+      g.uvs.push(Math.round(v.tu * 100) / 100, Math.round(v.tv * 100) / 100);
+      if (f.lm) {
+        const lu = (f.lm.ax + (v.tu / 16 - f.lm.smin) + 0.5) / ATLAS_W;
+        const lv = (f.lm.ay + (v.tv / 16 - f.lm.tmin) + 0.5) / atlasH;
+        g.luvs.push(Math.round(lu * 100000) / 100000, Math.round(lv * 100000) / 100000);
+      } else {
+        g.luvs.push(whiteU, whiteV);
+      }
+    };
+    for (let t = 1; t + 1 < f.poly.length; t++) {
+      pushVert(f.poly[0]);
+      pushVert(f.poly[t]);
+      pushVert(f.poly[t + 1]);
+    }
+  }
+
+  return {
+    extended,
+    groups: [...groups.values()],
+    spawns,
+    bounds,
+    lightAtlas: { width: ATLAS_W, height: atlasH, rgb: atlas },
+  };
 }

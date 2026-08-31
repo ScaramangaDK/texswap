@@ -262,11 +262,24 @@ export class Install {
         uvs[i] = Math.round(g.uvs[i] / w * 10000) / 10000;
         uvs[i + 1] = Math.round(g.uvs[i + 1] / h * 10000) / 10000;
       }
-      return { name: g.name, flags: flagNames(g.flags), positions: g.positions, uvs };
+      return { name: g.name, flags: flagNames(g.flags), positions: g.positions, uvs, luvs: g.luvs };
     });
-    const geo = { name: mapName, extended: raw.extended, groups, spawns: raw.spawns, bounds: raw.bounds };
-    this.geoCache.set(mapName, geo);
-    return geo;
+    // lightmap atlas: RGB -> RGBA -> PNG, served via /api/maplight
+    let atlasPng = null;
+    try {
+      const { width, height, rgb } = raw.lightAtlas;
+      const rgba = Buffer.alloc(width * height * 4);
+      for (let i = 0; i < width * height; i++) {
+        rgba[i * 4] = rgb[i * 3];
+        rgba[i * 4 + 1] = rgb[i * 3 + 1];
+        rgba[i * 4 + 2] = rgb[i * 3 + 2];
+        rgba[i * 4 + 3] = 255;
+      }
+      atlasPng = encodePng({ width, height, data: rgba });
+    } catch { /* viewer falls back to fullbright */ }
+    const geo = { name: mapName, extended: raw.extended, groups, spawns: raw.spawns, bounds: raw.bounds, hasLightmap: Boolean(atlasPng) };
+    this.geoCache.set(mapName, { geo, atlasPng });
+    return { geo, atlasPng };
   }
 
   // Thumbnail for an uploaded custom image (texswap/custom/*.png).

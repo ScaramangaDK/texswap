@@ -227,7 +227,16 @@ async function handleApi(req, url, res) {
     case '/api/mapgeo': {
       const name = q.get('name');
       if (!name) return json(res, 400, { error: 'missing ?name=' });
-      return json(res, 200, getInstall(dir).mapGeometry(name));
+      return json(res, 200, getInstall(dir).mapGeometry(name).geo);
+    }
+
+    case '/api/maplight': {
+      const name = q.get('name');
+      if (!name) return json(res, 400, { error: 'missing ?name=' });
+      const { atlasPng } = getInstall(dir).mapGeometry(name);
+      if (!atlasPng) { res.writeHead(404); return res.end(); }
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'max-age=300' });
+      return res.end(atlasPng);
     }
 
     case '/api/textures':

@@ -72,16 +72,33 @@ async function open(detail) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x10141a);
-  scene.add(new THREE.AmbientLight(0xffffff, 1.35));
-  const sun = new THREE.DirectionalLight(0xffffff, 1.1);
-  sun.position.set(0.4, 1, 0.25);
-  scene.add(sun);
+
+  // lightmap atlas (real Q2 lighting); intensity follows the user's
+  // gl_modulate when lighting is managed, else a sensible default
+  let lightMap = null;
+  if (geo.hasLightmap) {
+    const lmUrl = new URL('/api/maplight', location.origin);
+    lmUrl.searchParams.set('dir', AQTS.state.dir);
+    lmUrl.searchParams.set('name', detail.name);
+    lightMap = new THREE.TextureLoader().load(lmUrl.toString());
+    lightMap.channel = 1; // sample the uv1 attribute, not the diffuse UVs
+    lightMap.flipY = false;
+    lightMap.colorSpace = THREE.SRGBColorSpace;
+    lightMap.magFilter = THREE.LinearFilter;
+    lightMap.minFilter = THREE.LinearFilter;
+    lightMap.generateMipmaps = false;
+  } else {
+    scene.add(new THREE.AmbientLight(0xffffff, 1.35));
+  }
+  const L = AQTS.state.scan && AQTS.state.scan.lighting;
+  const modulate = L && L.manage && L.global && L.global.gl_modulate ? parseFloat(L.global.gl_modulate) : 2;
+  const lmIntensity = Math.min(4, Math.max(1, isNaN(modulate) ? 2 : modulate)) * 1.25;
 
   const camera = new THREE.PerspectiveCamera(80, 1, 1, 30000);
   camera.rotation.order = 'YXZ';
 
   ctx = {
-    renderer, scene, camera,
+    renderer, scene, camera, lightMap,
     loader: new THREE.TextureLoader(),
     texCache: new Map(),
     meshes: [],
@@ -105,13 +122,23 @@ async function open(detail) {
     const bg = new THREE.BufferGeometry();
     bg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     bg.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.uvs), 2));
-    bg.computeVertexNormals();
+    if (lightMap && g.luvs) {
+      bg.setAttribute('uv1', new THREE.BufferAttribute(new Float32Array(g.luvs), 2));
+    }
     const trans = g.flags.includes('trans33') || g.flags.includes('trans66');
-    const mat = new THREE.MeshLambertMaterial({
-      side: THREE.DoubleSide,
-      transparent: trans,
-      opacity: trans ? 0.6 : 1,
-    });
+    const mat = lightMap
+      ? new THREE.MeshBasicMaterial({
+          side: THREE.DoubleSide,
+          transparent: trans,
+          opacity: trans ? 0.6 : 1,
+          lightMap,
+          lightMapIntensity: lmIntensity,
+        })
+      : new THREE.MeshLambertMaterial({
+          side: THREE.DoubleSide,
+          transparent: trans,
+          opacity: trans ? 0.6 : 1,
+        });
     const mesh = new THREE.Mesh(bg, mat);
     mesh.userData.texName = g.name;
     mesh.userData.flags = g.flags;
@@ -238,6 +265,7 @@ function close() {
     m.material.dispose();
   }
   for (const t of ctx.texCache.values()) t.dispose();
+  if (ctx.lightMap) ctx.lightMap.dispose();
   ctx.renderer.dispose();
   ctx = null;
   document.getElementById('viewerOverlay').classList.add('hidden');
