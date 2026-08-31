@@ -235,6 +235,20 @@ export function extractBspGeometry(buf) {
   const faceStride = extended ? 28 : 20;
   const numFaces = Math.floor(fl.len / faceStride);
 
+  // Like the engine, draw only faces referenced by leaves (lump 9) plus brush
+  // entity models - faces buried inside solid geometry (e.g. stacked brushes)
+  // are never rendered in-game and carry black lightmaps.
+  const lf = lumps[9];
+  const lfStride = extended ? 4 : 2;
+  const visibleFaces = new Set();
+  for (let p = lf.ofs; p + lfStride <= lf.ofs + lf.len; p += lfStride) {
+    visibleFaces.add(extended ? buf.readUInt32LE(p) : buf.readUInt16LE(p));
+  }
+  for (let mi = 1; mi < models.length; mi++) {
+    const mo = models[mi];
+    for (let f = mo.firstface; f < mo.firstface + mo.numfaces; f++) visibleFaces.add(f);
+  }
+
   const ll = lumps[7]; // lighting lump: 3-byte RGB luxels
 
   const SKIP_FLAGS = 4 | 128; // SURF_SKY | SURF_NODRAW
@@ -245,7 +259,7 @@ export function extractBspGeometry(buf) {
   // pass 1: gather faces with texel UVs and lightmap block info
   const facesOut = [];
   for (let i = 0; i < numFaces; i++) {
-    if (hiddenFaces.has(i)) continue;
+    if (!visibleFaces.has(i) || hiddenFaces.has(i)) continue;
     const p = fl.ofs + i * faceStride;
     let firstEdge, numFEdges, texinfoIdx, lightofs;
     if (extended) {
@@ -343,9 +357,11 @@ export function extractBspGeometry(buf) {
       }
     }
     // masked overlays whose bake is essentially black (compiler lit them as
-    // inside the wall) fall back to neutral grey instead of glowing or vanishing
+    // inside the wall) fall back to neutral grey instead of glowing or vanishing.
+    // Warp (water) is excluded: its dark bakes are legitimate lighting.
+    const OVERLAY_BITS = 16 | 32 | 33554432;
     const avg = lumSum / (w * h * 3);
-    if ((f.flags & MASKED_BITS) && avg < 8) f.useGrey = true;
+    if ((f.flags & OVERLAY_BITS) && !(f.flags & 8) && avg < 8) f.useGrey = true;
   }
 
   // pass 3: triangulate into groups keyed by texture + surface type, so the

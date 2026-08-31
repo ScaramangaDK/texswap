@@ -128,6 +128,7 @@ async function open(detail) {
     detailName: detail.name,
     last: performance.now(),
     yaw: 0, pitch: 0,
+    timeUniform: { value: 0 },
   };
 
   // quake (x, y, z-up) -> three (x, z, -y)
@@ -165,6 +166,24 @@ async function open(detail) {
     const mat = lightMap
       ? new THREE.MeshBasicMaterial({ ...common, lightMap, lightMapIntensity: lmIntensity })
       : new THREE.MeshLambertMaterial(common);
+    // classic q2 surface animation: warp undulation and flowing scroll
+    const warp = g.flags.includes('warp');
+    const flowing = g.flags.includes('flowing');
+    if (warp || flowing) {
+      mat.onBeforeCompile = shader => {
+        shader.uniforms.uTime = ctx.timeUniform;
+        shader.fragmentShader = 'uniform float uTime;\n' + shader.fragmentShader.replace(
+          '#include <map_fragment>',
+          `#ifdef USE_MAP
+            vec2 aqUv = vMapUv;
+            ${warp ? 'aqUv += 0.05 * sin(vMapUv.yx * 9.0 + uTime * 1.7);' : ''}
+            ${flowing ? 'aqUv.x -= uTime * 0.12;' : ''}
+            vec4 sampledDiffuseColor = texture2D( map, aqUv );
+            diffuseColor *= sampledDiffuseColor;
+          #endif`,
+        );
+      };
+    }
     const mesh = new THREE.Mesh(bg, mat);
     mesh.userData.texName = g.name;
     mesh.userData.flags = g.flags;
@@ -255,6 +274,7 @@ async function open(detail) {
     const now = performance.now();
     const dt = Math.min(0.1, (now - ctx.last) / 1000);
     ctx.last = now;
+    ctx.timeUniform.value = now / 1000;
     camera.rotation.set(ctx.pitch, ctx.yaw, 0);
     const speed = (ctx.keys.has('ShiftLeft') || ctx.keys.has('ShiftRight')) ? 1200 : 400;
     const fwd = new THREE.Vector3();

@@ -29,6 +29,32 @@ export function decodeWal(buf, palette, transparent255 = false) {
     // on trans-flagged surfaces the engine renders palette index 255 as a hole
     rgba[i * 4 + 3] = (transparent255 && idx === 255) ? 0 : 255;
   }
+  if (transparent255) {
+    // defringe: bleed opaque neighbor colors into transparent texels so GPU
+    // filtering doesn't halo the hidden palette-255 color around cutout edges
+    for (let pass = 0; pass < 2; pass++) {
+      const copy = Buffer.from(rgba);
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = (y * w + x) * 4;
+          if (copy[i + 3] !== 0) continue;
+          let r = 0, g = 0, b = 0, n = 0;
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+            const j = (ny * w + nx) * 4;
+            if (copy[j + 3] > 0) { r += copy[j]; g += copy[j + 1]; b += copy[j + 2]; n++; }
+          }
+          if (n) {
+            rgba[i] = r / n;
+            rgba[i + 1] = g / n;
+            rgba[i + 2] = b / n;
+            rgba[i + 3] = 2; // still far below any alphaTest, but a bleed source next pass
+          }
+        }
+      }
+    }
+  }
   return { width: w, height: h, data: rgba };
 }
 
