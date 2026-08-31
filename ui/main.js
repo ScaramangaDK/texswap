@@ -789,14 +789,15 @@ const LIGHT_CVARS = [
   { key: 'gl_modulate', label: 'Light boost (overall)', hint: '1 = stock, 2–3 = common comp values' },
   { key: 'gl_modulate_world', label: 'Light boost: world', hint: 'world geometry only' },
   { key: 'gl_modulate_entities', label: 'Light boost: models', hint: 'players, items, weapons' },
-  { key: 'gl_brightness', label: 'Brightness (additive)', hint: '0 = stock; positive lifts dark areas' },
+  { key: 'gl_brightness', label: 'Brightness (additive)', hint: 'default ~0.01; higher lifts dark areas' },
   { key: 'intensity', label: 'Texture intensity', hint: 'texture brightness multiplier' },
   { key: 'gl_saturation', label: 'Texture saturation', hint: '1 = full color, 0 = grayscale' },
   { key: 'gl_coloredlightmaps', label: 'Colored lightmaps', hint: '1 = colored lights, 0 = white' },
   { key: 'gl_dynamic', label: 'Dynamic lights', hint: '1 = on, 0 = off (muzzle flashes etc.)' },
   { key: 'gl_picmip', label: 'Texture detail reduction', hint: '0 = full detail; higher = blurrier' },
   { key: 'r_override_textures', label: 'Hi-res overrides', hint: '1 = allow png/tga/jpg replacements' },
-  { key: 'r_texture_overrides', label: 'Override mask', hint: 'your 15 = world low-res / 31 = world hi-res' },
+  // r_texture_overrides (the category bitmask, e.g. 15/31) is parked until we
+  // have solid documentation to explain it - use "extra cfg lines" meanwhile.
 ];
 
 function buildLightForm(container, values, placeholders) {
@@ -818,22 +819,7 @@ function buildLightForm(container, values, placeholders) {
     const hint = document.createElement('span');
     hint.className = 'lhint';
     hint.textContent = `${c.key} — ${c.hint}`;
-    if (c.key === 'r_texture_overrides') {
-      const wrap = document.createElement('div');
-      wrap.className = 'lquick';
-      for (const v of ['15', '31']) {
-        const b = document.createElement('button');
-        b.textContent = v;
-        b.title = v === '15' ? 'world textures low-res' : 'world textures hi-res';
-        b.addEventListener('click', () => { input.value = v; input.classList.add('set'); });
-        wrap.appendChild(b);
-      }
-      wrap.prepend(input);
-      input.style.width = '52px';
-      row.append(label, wrap, hint);
-    } else {
-      row.append(label, input, hint);
-    }
+    row.append(label, input, hint);
     container.appendChild(row);
     inputs[c.key] = input;
   }
