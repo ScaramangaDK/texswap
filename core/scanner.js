@@ -6,6 +6,7 @@ import { GameFS } from './vfs.js';
 import { parseBsp, extractBspGeometry, flagNames } from './bsp.js';
 import { decodePcx, decodeImage } from './decoders.js';
 import { encodePng, resizeRgba } from './thumbs.js';
+import { flatImage } from './gen.js';
 import { makeThumbPng, resolveImage, TEXTURE_EXTS, TEXTURE_EXTS_LOW } from './thumbs.js';
 import { imageSize } from './decoders.js';
 import { SwapStore } from './swaps.js';
@@ -238,6 +239,15 @@ export class Install {
   skyThumbPng(skyName, maxDim = 128) {
     return this.thumbPng('env/' + skyName + 'ft', maxDim) ||
       this.thumbPng('env/' + skyName + 'bk', maxDim);
+  }
+
+  // Neutral blue grid served in place of textures the install doesn't have.
+  placeholderPng(size = 128) {
+    const key = 'placeholder@' + size;
+    if (this.thumbCache.has(key)) return this.thumbCache.get(key);
+    const png = encodePng(flatImage('#3d6fa8', 'grid', size));
+    this.thumbCache.set(key, png);
+    return png;
   }
 
   // Renderable geometry for the 3D viewer, with UVs normalized against the

@@ -517,6 +517,7 @@ main { flex: 1; display: flex; min-height: 0; }
   vertical-align: 1px;
 }
 .badge.swapbadge { background: var(--accent); color: var(--on-accent); }
+.badge.missingbadge { background: var(--bad-soft); color: var(--bad); }
 
 .card .swaptag {
   position: absolute;

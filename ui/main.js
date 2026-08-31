@@ -440,11 +440,9 @@ function renderGrid() {
 
     const wrap = document.createElement('div');
     wrap.className = 'imgwrap';
-    const mainSrc = t.swap ? swapThumbUrl(t.swap, 128) : (t.missing ? null : thumbUrl({ tex: t.name }));
+    const mainSrc = t.swap ? swapThumbUrl(t.swap, 128) : thumbUrl({ tex: t.name });
     if (t.swap && t.swap.type === 'invisible') {
       wrap.innerHTML = '<span class="missing">👻 invisible</span>';
-    } else if (!mainSrc) {
-      wrap.innerHTML = '<span class="missing">no image file</span>';
     } else {
       const img = document.createElement('img');
       img.loading = 'lazy';
@@ -460,7 +458,7 @@ function renderGrid() {
       tag.className = 'swaptag';
       tag.textContent = t.swap.type === 'flat' ? 'FLAT' : 'SWAP';
       card.appendChild(tag);
-      if (!t.missing) {
+      {
         const orig = document.createElement('img');
         orig.className = 'origthumb';
         orig.loading = 'lazy';
@@ -485,6 +483,13 @@ function renderGrid() {
       const b = document.createElement('span');
       b.className = 'badge';
       b.textContent = f;
+      nameEl.appendChild(b);
+    }
+    if (t.missing) {
+      const b = document.createElement('span');
+      b.className = 'badge missingbadge';
+      b.textContent = 'missing';
+      b.title = 'No image file in this install — showing the blue placeholder';
       nameEl.appendChild(b);
     }
     const meta = document.createElement('div');
