@@ -323,12 +323,11 @@ h1 { font-size: 16px; font-weight: 650; letter-spacing: 0.01em; }
 }
 .sidehead {
   display: flex;
-  gap: 10px;
   align-items: center;
-  padding: 12px;
+  padding: 4px 12px 12px;
   border-bottom: 1px solid var(--line);
 }
-.sidehead input { flex: 1; height: 30px; }
+.sidehead input { flex: 1; height: 32px; }
 
 #mapList { list-style: none; overflow-y: auto; flex: 1; padding: 6px; }
 #mapList li {

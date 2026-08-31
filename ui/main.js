@@ -121,6 +121,7 @@ async function rescan(refresh) {
   showBanner(warn.length ? warn.join('\n') : null);
   renderMapList();
   renderHook();
+  $('mapSearch').placeholder = `Search ${state.scan.maps.length} maps…`;
   $('empty').firstElementChild.textContent =
     `${state.scan.maps.length} maps in ${state.scan.gameDirs.join(' + ')} — pick one on the left.`;
   if (state.activeMap && state.scan.maps.some(m => m.name === state.activeMap)) {
@@ -261,7 +262,6 @@ function renderMapList() {
     li.addEventListener('click', () => selectMap(m.name));
     ul.appendChild(li);
   }
-  $('mapCount').textContent = q ? `${shown}/${maps.length}` : `${maps.length}`;
 }
 
 function syncMapListEntry() {
