@@ -1816,6 +1816,9 @@ function openGuide() {
       <p>${hookOk
         ? '✓ <b>Already installed.</b> One line in your autoexec.cfg makes the game apply your presets on every map load, and binds <b>F9</b> to re-apply.'
         : 'Not installed yet — click below. It adds one line to autoexec.cfg so the game applies your presets on every map load, and binds <b>F9</b> to re-apply.'}</p>
+      <p class="mnote">Works with <b>AQ2 / AQtion</b> and <b>plain Quake 2</b> installs (q2pro-family engines).
+      For Quake 2, a mod dropdown appears next to the path — pick which mod the game runs and the app
+      layers it over baseq2 exactly like the engine does.</p>
       ${hookOk ? '' : '<p><button class="primary" id="guideInstallHook">⚡ Install game hook</button></p>'}
 
       <div class="sectionhead">3 · Swap textures</div>
