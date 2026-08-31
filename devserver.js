@@ -292,6 +292,13 @@ async function handleApi(req, url, res) {
     case '/api/skies':
       return json(res, 200, { skies: getInstall(dir).listSkies() });
 
+    case '/api/skyface': {
+      const png = getInstall(dir).skyFacePng(q.get('sky') || '', q.get('face') || '');
+      if (!png) { res.writeHead(404); return res.end(); }
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'max-age=600' });
+      return res.end(png);
+    }
+
     case '/api/palette': {
       // the install's Quake 2 palette (colormap.pcx) as 256 hex colors
       const p = getInstall(dir).palette;

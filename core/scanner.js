@@ -285,6 +285,12 @@ export class Install {
       this.thumbPng('env/' + skyName + 'bk', maxDim);
   }
 
+  // One full-resolution skybox face as PNG, for the 3D viewer backdrop.
+  skyFacePng(skyName, face) {
+    if (!/^(rt|lf|ft|bk|up|dn)$/.test(face)) return null;
+    return this.thumbPng('env/' + skyName + face, 1024);
+  }
+
   // Texture names in a map with no image file anywhere in the install,
   // skipping utility surfaces nobody sees (for the global missing-tex fix).
   missingTextures(bspPath) {

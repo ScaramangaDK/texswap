@@ -55,6 +55,66 @@ function applyGroupLook(mesh, detail) {
   mat.needsUpdate = true;
 }
 
+// Q2 sky face -> three.js cubemap side, in our world transform (x, z, -y):
+// rt=+X lf=-X up=+Y(top) dn=-Y ft=+Z(quake -Y) bk=-Z. Each face takes
+// quarter-turns (q) and mirroring (mx) because three samples cube faces in
+// the GL convention while Q2 faces are straight photos; calibrated against
+// cloud-seam continuity (see AQVskyRot for live tuning).
+const SKY_XFORM = {
+  rt: { q: 0, mx: true }, lf: { q: 0, mx: true },
+  up: { q: 0, mx: true }, dn: { q: 0, mx: true },
+  ft: { q: 0, mx: true }, bk: { q: 0, mx: true },
+};
+
+function buildSkyCube(imgs, xf) {
+  const prep = (img, t) => {
+    const s = img.width;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = s;
+    const g = cv.getContext('2d');
+    g.translate(s / 2, s / 2);
+    if (t.mx) g.scale(-1, 1);
+    g.rotate((t.q || 0) * Math.PI / 2);
+    g.drawImage(img, -s / 2, -s / 2, s, s);
+    return cv;
+  };
+  const cube = new THREE.CubeTexture([
+    prep(imgs.rt, xf.rt), prep(imgs.lf, xf.lf),
+    prep(imgs.up, xf.up), prep(imgs.dn, xf.dn),
+    prep(imgs.ft, xf.ft), prep(imgs.bk, xf.bk),
+  ]);
+  cube.needsUpdate = true;
+  cube.colorSpace = THREE.SRGBColorSpace;
+  return cube;
+}
+
+async function loadSkyBackground(myCtx, scene, detail) {
+  const AQTS = window.AQTS;
+  const name = detail.skySwap || detail.sky;
+  if (!name) return;
+  const faceUrl = f => {
+    const u = new URL('/api/skyface', location.origin);
+    u.searchParams.set('dir', AQTS.state.dir);
+    u.searchParams.set('sky', name);
+    u.searchParams.set('face', f);
+    return u.toString();
+  };
+  const loadImg = f => new Promise(res => {
+    const im = new Image();
+    im.onload = () => res(im);
+    im.onerror = () => res(null);
+    im.src = faceUrl(f);
+  });
+  const faces = ['rt', 'lf', 'up', 'dn', 'ft', 'bk'];
+  const loaded = await Promise.all(faces.map(loadImg));
+  if (ctx !== myCtx || loaded.some(x => !x)) return; // closed, or incomplete set
+  const imgs = Object.fromEntries(faces.map((f, i) => [f, loaded[i]]));
+  myCtx.skyImgs = imgs;
+  scene.background = buildSkyCube(imgs, SKY_XFORM);
+  // live recalibration helper: AQVskyRot({rt: {q: 1, mx: true}, ...})
+  window.AQVskyRot = xf => { scene.background = buildSkyCube(imgs, { ...SKY_XFORM, ...xf }); };
+}
+
 async function open(detail) {
   close();
   const AQTS = window.AQTS;
@@ -150,6 +210,7 @@ async function open(detail) {
     timeUniform: { value: 0 },
   };
   window.AQV = ctx;
+  loadSkyBackground(ctx, scene, detail);
 
   // quake (x, y, z-up) -> three (x, z, -y)
   let maskedCount = 0;
