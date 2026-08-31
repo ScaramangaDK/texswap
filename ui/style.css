@@ -487,6 +487,8 @@ button.primary:hover { background: var(--accent2); color: #1a1206; }
 .vtop .mono { font-family: Consolas, monospace; }
 .vtop #vMapName { color: var(--accent2); font-size: 15px; font-weight: 600; }
 .vtop .vhover { color: var(--dim); font-size: 13px; flex: 1; }
+.vbright { display: flex; align-items: center; gap: 6px; color: var(--accent2); font-size: 14px; }
+.vbright input[type=range] { width: 130px; accent-color: var(--accent); }
 .vhelp {
   position: absolute;
   bottom: 12px; left: 50%;

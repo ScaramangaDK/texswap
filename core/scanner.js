@@ -221,12 +221,13 @@ export class Install {
     return this.skyCatalog;
   }
 
-  thumbPng(basePath, maxDim = 128, lowRes = false) {
-    const key = basePath.toLowerCase() + '@' + maxDim + (lowRes ? '@low' : '');
+  thumbPng(basePath, maxDim = 128, lowRes = false, alpha255 = false) {
+    const key = basePath.toLowerCase() + '@' + maxDim + (lowRes ? '@low' : '') + (alpha255 ? '@a' : '');
     if (this.thumbCache.has(key)) return this.thumbCache.get(key);
     let png = null;
     try {
-      png = makeThumbPng(this.fs, basePath, this.palette, maxDim, lowRes ? TEXTURE_EXTS_LOW : TEXTURE_EXTS);
+      png = makeThumbPng(this.fs, basePath, this.palette, maxDim,
+        lowRes ? TEXTURE_EXTS_LOW : TEXTURE_EXTS, { transparent255: alpha255 });
     } catch {
       png = null;
     }

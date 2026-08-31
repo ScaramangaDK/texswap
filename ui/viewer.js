@@ -4,14 +4,19 @@ import * as THREE from '/vendor/three.module.js';
 
 let ctx = null;
 
-function urlForGroup(name, detail) {
+function urlForGroup(name, detail, isTrans) {
   const t = detail && detail.textures.find(x => x.name === name);
   const AQTS = window.AQTS;
   if (t && t.swap) {
     if (t.swap.type === 'invisible') return { invisible: true, trans: t.flags.some(f => f.startsWith('trans')) };
+    if (t.swap.type === 'stock' && isTrans) {
+      return { url: AQTS.thumbUrl({ tex: t.swap.to, size: 256, alpha: 1 }) };
+    }
     return { url: AQTS.swapThumbUrl(t.swap, 256) };
   }
-  return { url: AQTS.thumbUrl({ tex: name, size: 256 }) };
+  const params = { tex: name, size: 256 };
+  if (isTrans) params.alpha = 1;
+  return { url: AQTS.thumbUrl(params) };
 }
 
 function loadMapTexture(url) {
@@ -25,7 +30,9 @@ function loadMapTexture(url) {
 }
 
 function applyGroupLook(mesh, detail) {
-  const info = urlForGroup(mesh.userData.texName, detail);
+  const isTrans = mesh.userData.flags &&
+    (mesh.userData.flags.includes('trans33') || mesh.userData.flags.includes('trans66'));
+  const info = urlForGroup(mesh.userData.texName, detail, isTrans);
   const mat = mesh.material;
   if (info.invisible) {
     if (info.trans) {
@@ -83,16 +90,25 @@ async function open(detail) {
     lightMap = new THREE.TextureLoader().load(lmUrl.toString());
     lightMap.channel = 1; // sample the uv1 attribute, not the diffuse UVs
     lightMap.flipY = false;
-    lightMap.colorSpace = THREE.SRGBColorSpace;
+    // linear sampling: sRGB-decoding crushes dark luxels and everything
+    // ends up far darker than the engine's straight byte-multiply
     lightMap.magFilter = THREE.LinearFilter;
     lightMap.minFilter = THREE.LinearFilter;
     lightMap.generateMipmaps = false;
   } else {
     scene.add(new THREE.AmbientLight(0xffffff, 1.35));
   }
-  const L = AQTS.state.scan && AQTS.state.scan.lighting;
-  const modulate = L && L.manage && L.global && L.global.gl_modulate ? parseFloat(L.global.gl_modulate) : 2;
-  const lmIntensity = Math.min(4, Math.max(1, isNaN(modulate) ? 2 : modulate)) * 1.25;
+  // brightness: user-tuned via the slider (the engine stacks intensity,
+  // overbright and gamma on top of gl_modulate, so this is a taste control)
+  const saved = parseFloat(localStorage.getItem('aq2ts.vbright'));
+  const lmIntensity = Number.isFinite(saved) && saved >= 0.5 && saved <= 12 ? saved : 3;
+  const brightInput = document.getElementById('vBright');
+  brightInput.value = lmIntensity;
+  brightInput.oninput = () => {
+    const v = parseFloat(brightInput.value);
+    localStorage.setItem('aq2ts.vbright', v);
+    if (ctx) for (const m of ctx.meshes) m.material.lightMapIntensity = v;
+  };
 
   const camera = new THREE.PerspectiveCamera(80, 1, 1, 30000);
   camera.rotation.order = 'YXZ';
@@ -126,19 +142,16 @@ async function open(detail) {
       bg.setAttribute('uv1', new THREE.BufferAttribute(new Float32Array(g.luvs), 2));
     }
     const trans = g.flags.includes('trans33') || g.flags.includes('trans66');
+    const opacity = g.flags.includes('trans33') ? 0.45 : g.flags.includes('trans66') ? 0.75 : 1;
+    const common = {
+      side: THREE.DoubleSide,
+      transparent: trans,
+      opacity,
+      alphaTest: trans ? 0.05 : 0, // palette-255 holes stay holes
+    };
     const mat = lightMap
-      ? new THREE.MeshBasicMaterial({
-          side: THREE.DoubleSide,
-          transparent: trans,
-          opacity: trans ? 0.6 : 1,
-          lightMap,
-          lightMapIntensity: lmIntensity,
-        })
-      : new THREE.MeshLambertMaterial({
-          side: THREE.DoubleSide,
-          transparent: trans,
-          opacity: trans ? 0.6 : 1,
-        });
+      ? new THREE.MeshBasicMaterial({ ...common, lightMap, lightMapIntensity: lmIntensity })
+      : new THREE.MeshLambertMaterial(common);
     const mesh = new THREE.Mesh(bg, mat);
     mesh.userData.texName = g.name;
     mesh.userData.flags = g.flags;

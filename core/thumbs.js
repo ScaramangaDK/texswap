@@ -16,11 +16,11 @@ export function resolveImage(gameFs, basePath, exts = TEXTURE_EXTS) {
   return null;
 }
 
-export function loadRgba(gameFs, basePath, palette, exts = TEXTURE_EXTS) {
+export function loadRgba(gameFs, basePath, palette, exts = TEXTURE_EXTS, opts = {}) {
   const hit = resolveImage(gameFs, basePath, exts);
   if (!hit) return null;
   const buf = gameFs.read(hit.path);
-  return { ...decodeImage(buf, hit.ext, palette), path: hit.path, ext: hit.ext, source: hit.source };
+  return { ...decodeImage(buf, hit.ext, palette, opts), path: hit.path, ext: hit.ext, source: hit.source };
 }
 
 export function sizeOf(gameFs, basePath, exts = TEXTURE_EXTS) {
@@ -64,8 +64,8 @@ export function encodePng(img) {
   return PNG.sync.write(png);
 }
 
-export function makeThumbPng(gameFs, basePath, palette, maxDim = 128, exts = TEXTURE_EXTS) {
-  const img = loadRgba(gameFs, basePath, palette, exts);
+export function makeThumbPng(gameFs, basePath, palette, maxDim = 128, exts = TEXTURE_EXTS, opts = {}) {
+  const img = loadRgba(gameFs, basePath, palette, exts, opts);
   if (!img) return null;
   return encodePng(resizeRgba(img, maxDim));
 }

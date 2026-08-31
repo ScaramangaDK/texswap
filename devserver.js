@@ -249,7 +249,7 @@ async function handleApi(req, url, res) {
       const inst = getInstall(dir);
       const size = Math.min(512, Number(q.get('size')) || 128);
       let png = null;
-      if (q.get('tex')) png = inst.thumbPng('textures/' + q.get('tex'), size, q.get('res') === 'low');
+      if (q.get('tex')) png = inst.thumbPng('textures/' + q.get('tex'), size, q.get('res') === 'low', q.get('alpha') === '1');
       else if (q.get('custom')) png = inst.customThumbPng(q.get('custom'), size);
       else if (q.get('sky')) png = inst.skyThumbPng(q.get('sky'), size);
       else if (q.get('flat')) {

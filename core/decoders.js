@@ -13,7 +13,7 @@ function checkDims(w, h, what) {
 
 // --- WAL (8-bit paletted, needs the Q2 palette: Buffer of 768 RGB bytes) ---
 
-export function decodeWal(buf, palette) {
+export function decodeWal(buf, palette, transparent255 = false) {
   const w = buf.readUInt32LE(32);
   const h = buf.readUInt32LE(36);
   const ofs = buf.readUInt32LE(40);
@@ -21,11 +21,13 @@ export function decodeWal(buf, palette) {
   if (ofs + w * h > buf.length) throw new Error('wal: pixel data out of bounds');
   const rgba = Buffer.alloc(w * h * 4);
   for (let i = 0; i < w * h; i++) {
-    const c = buf[ofs + i] * 3;
+    const idx = buf[ofs + i];
+    const c = idx * 3;
     rgba[i * 4] = palette[c];
     rgba[i * 4 + 1] = palette[c + 1];
     rgba[i * 4 + 2] = palette[c + 2];
-    rgba[i * 4 + 3] = 255;
+    // on trans-flagged surfaces the engine renders palette index 255 as a hole
+    rgba[i * 4 + 3] = (transparent255 && idx === 255) ? 0 : 255;
   }
   return { width: w, height: h, data: rgba };
 }
@@ -142,7 +144,7 @@ export function decodeTga(buf) {
 
 // --- dispatch by extension ---
 
-export function decodeImage(buf, ext, palette) {
+export function decodeImage(buf, ext, palette, opts = {}) {
   switch (ext) {
     case '.png': {
       const png = PNG.sync.read(buf);
@@ -157,7 +159,7 @@ export function decodeImage(buf, ext, palette) {
     case '.pcx': return decodePcx(buf);
     case '.wal': {
       if (!palette) throw new Error('wal needs palette');
-      return decodeWal(buf, palette);
+      return decodeWal(buf, palette, Boolean(opts.transparent255));
     }
     default: throw new Error('unknown image extension ' + ext);
   }
