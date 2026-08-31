@@ -544,7 +544,8 @@ button.off { border-color: var(--bad); color: var(--bad); }
   font-size: 12.5px;
   resize: vertical;
 }
-.lmanage { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; font-size: 14px; }
+.lmanage { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; font-size: 14px; }
+.lsubnote { color: var(--dim); font-size: 12px; margin: 0 0 14px 24px; max-width: 640px; }
 .scopenote {
   border-left: 3px solid;
   border-radius: 4px;

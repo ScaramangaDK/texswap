@@ -851,7 +851,10 @@ function openLighting(startTab) {
       <div id="lgPane">
         <p class="scopenote global">These are your defaults for <b>every map</b>. A map with its own override uses its values instead.</p>
         <label class="lmanage"><input type="checkbox" id="lManage" ${L.manage ? 'checked' : ''}>
-          Let the app manage lighting (written into every map cfg, applies on map load / F9)</label>
+          <b>Apply these lighting settings in the game</b></label>
+        <p class="lsubnote">ON: the values you type below are set on every map load (and F9) — globals first, map overrides on top.
+        OFF: the app doesn't touch your game's lighting at all; your values stay saved here for later.
+        The app never picks numbers by itself — it only applies what you enter.</p>
         <div class="lightform" id="lgForm"></div>
         <div class="sectionhead">Extra cfg lines (advanced)</div>
         <textarea id="lExtra" class="lextra" spellcheck="false"
@@ -860,7 +863,7 @@ function openLighting(startTab) {
       ${hasMap ? `
       <div id="lmPane" class="hidden">
         <p class="scopenote map">This overrides your globals <b>only on ${d.name}</b>. Empty fields keep the global value (shown in grey).
-        ${L.manage ? '' : '<br><b>Lighting management is OFF — enable it on the Global tab first.</b>'}</p>
+        ${L.manage ? '' : '<br><b>Applying lighting is currently switched OFF — turn it on on the Global tab for any of this to reach the game.</b>'}</p>
         <div class="lightform" id="lmForm"></div>
       </div>` : ''}
     </div>
@@ -905,7 +908,9 @@ function openLighting(startTab) {
       state.scan.lighting = r.lighting;
       renderHook();
       reportWritten(r);
-      toast(r.lighting.manage ? 'Global lighting saved - applies on map load / F9' : 'Lighting management turned off');
+      toast(r.lighting.manage
+        ? 'Global lighting saved - applies on map load / F9'
+        : 'Saved. Applying is OFF - the game\'s lighting is left alone until you switch it on');
       if (state.activeMap) selectMap(state.activeMap);
     } catch (e) {
       toast('Lighting save failed: ' + e.message, true);
