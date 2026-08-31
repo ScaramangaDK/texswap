@@ -167,6 +167,8 @@ export class Install {
       savedPresets: this.swaps.savedPresetNames(mapName),
       activePreset: this.swaps.activePreset(mapName),
       swapsEnabled: this.swaps.enabled,
+      lighting: this.swaps.mapLighting(mapName),
+      lightingManaged: this.swaps.lightingConfig().manage,
       extended: parsed.extended,
       warnings: parsed.warnings,
       hasPalette: Boolean(this.palette),

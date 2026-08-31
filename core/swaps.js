@@ -22,18 +22,66 @@ function sanitizePresetName(name) {
   return clean;
 }
 
+// Keep cfg output safe: plain cvar names, short quote/semicolon-free values.
+function cleanCvarMap(obj) {
+  const out = {};
+  if (!obj || typeof obj !== 'object') return out;
+  for (const [k, v] of Object.entries(obj)) {
+    if (!/^[a-z0-9_]{1,32}$/i.test(k)) continue;
+    const val = String(v).trim();
+    if (val === '' || val.length > 32 || /["\n\r;]/.test(val)) continue;
+    out[k.toLowerCase()] = val;
+  }
+  return out;
+}
+
 export class SwapStore {
   constructor(install) {
     this.install = install;
     this.dir = path.join(install.writeDir, 'texswap');
     this.file = path.join(this.dir, 'presets.json');
-    this.data = { version: 2, enabled: true, maps: {} };
+    this.data = { version: 2, enabled: true, lighting: { manage: false, global: {}, extra: '' }, maps: {} };
     try {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
       if (raw && raw.maps) {
-        this.data = { version: 2, enabled: raw.enabled !== false, maps: raw.maps };
+        this.data = {
+          version: 2,
+          enabled: raw.enabled !== false,
+          lighting: {
+            manage: Boolean(raw.lighting && raw.lighting.manage),
+            global: cleanCvarMap(raw.lighting && raw.lighting.global),
+            extra: typeof (raw.lighting && raw.lighting.extra) === 'string' ? raw.lighting.extra.slice(0, 2000) : '',
+          },
+          maps: raw.maps,
+        };
       }
     } catch { /* no presets yet */ }
+  }
+
+  lightingConfig() {
+    return this.data.lighting;
+  }
+
+  setLighting(cfg) {
+    this.data.lighting = {
+      manage: Boolean(cfg && cfg.manage),
+      global: cleanCvarMap(cfg && cfg.global),
+      extra: typeof (cfg && cfg.extra) === 'string' ? cfg.extra.replace(/\r/g, '').slice(0, 2000) : '',
+    };
+    return this.#saveAndMaterialize();
+  }
+
+  mapLighting(mapName) {
+    const e = this.data.maps[mapName];
+    return e && e.lighting ? e.lighting : null;
+  }
+
+  setMapLighting(mapName, cvars) {
+    const e = this.mapEntry(mapName, true);
+    const clean = cleanCvarMap(cvars);
+    e.lighting = Object.keys(clean).length ? clean : null;
+    e.active = null;
+    return this.#saveAndMaterialize();
   }
 
   get enabled() {
@@ -77,6 +125,8 @@ export class SwapStore {
       // keep saved presets; only clear the working state
       e.swaps = {};
       e.sky = null;
+      e.lighting = null;
+      e.active = null;
       if (!e.saved || !Object.keys(e.saved).length) delete this.data.maps[mapName];
     }
     return this.#saveAndMaterialize();
@@ -96,7 +146,11 @@ export class SwapStore {
     const clean = sanitizePresetName(name);
     const e = this.mapEntry(mapName, true);
     if (!e.saved) e.saved = {};
-    e.saved[clean] = { swaps: structuredClone(e.swaps), sky: e.sky ? { ...e.sky } : null };
+    e.saved[clean] = {
+      swaps: structuredClone(e.swaps),
+      sky: e.sky ? { ...e.sky } : null,
+      lighting: e.lighting ? { ...e.lighting } : null,
+    };
     e.active = clean;
     fs.mkdirSync(this.dir, { recursive: true });
     fs.writeFileSync(this.file, JSON.stringify(this.data, null, 2));
@@ -108,6 +162,7 @@ export class SwapStore {
     if (!e || !e.saved || !e.saved[name]) throw new Error(`no preset "${name}" for ${mapName}`);
     e.swaps = structuredClone(e.saved[name].swaps);
     e.sky = e.saved[name].sky ? { ...e.saved[name].sky } : null;
+    e.lighting = e.saved[name].lighting ? { ...e.saved[name].lighting } : null;
     e.active = name;
     return this.#saveAndMaterialize();
   }
@@ -122,7 +177,8 @@ export class SwapStore {
   // it to texswap/exports/ so the user has a file to send to friends.
   exportMap(mapName) {
     const { swaps, sky } = this.swapsFor(mapName);
-    if (!Object.keys(swaps).length && !sky) throw new Error('nothing to export - no swaps on this map');
+    const lighting = this.mapLighting(mapName);
+    if (!Object.keys(swaps).length && !sky && !lighting) throw new Error('nothing to export - no swaps on this map');
     const obj = {
       app: 'aq2-texture-swapper',
       format: 1,
@@ -130,6 +186,7 @@ export class SwapStore {
       map: mapName,
       swaps,
       sky,
+      lighting,
     };
     const dir = path.join(this.dir, 'exports');
     fs.mkdirSync(dir, { recursive: true });
@@ -159,6 +216,8 @@ export class SwapStore {
     const e = this.mapEntry(obj.map, true);
     e.swaps = swaps;
     e.sky = obj.sky && obj.sky.to ? { to: obj.sky.to } : null;
+    const impLighting = cleanCvarMap(obj.lighting);
+    e.lighting = Object.keys(impLighting).length ? impLighting : null;
     const result = this.#saveAndMaterialize();
     return { map: obj.map, known, warnings: warnings.concat(result.warnings), written: result.written };
   }
@@ -246,8 +305,28 @@ export class SwapStore {
         }
       }
 
-      if (active) {
-        lines.push(`echo [texswap] applied ${active} link(s) for ${map.name}`);
+      // lighting: global defaults + per-map overrides, only when managed & enabled
+      let lightingActive = false;
+      const L = this.data.lighting;
+      if (this.enabled && L.manage) {
+        const merged = { ...L.global, ...(entry && entry.lighting ? entry.lighting : {}) };
+        const extra = (L.extra || '').split('\n').map(s => s.trim()).filter(Boolean);
+        if (Object.keys(merged).length || extra.length) {
+          lines.push('// lighting');
+          for (const [k, v] of Object.entries(merged)) lines.push(`set ${k} "${v}"`);
+          lines.push(...extra);
+          lightingActive = true;
+        }
+      }
+
+      // A map the user ever touched must r_reload even with zero links now,
+      // otherwise clearing a swap leaves the old image in the texture cache.
+      const touched = Boolean(this.data.maps[map.name]);
+      if (active || lightingActive) {
+        lines.push(`echo [texswap] applied ${active} link(s)${lightingActive ? ' + lighting' : ''} for ${map.name}`);
+        lines.push('r_reload');
+      } else if (touched) {
+        lines.push(`echo [texswap] ${map.name} back to stock`);
         lines.push('r_reload');
       }
       const cfgPath = path.join(this.dir, `${map.name}.cfg`);
@@ -267,7 +346,9 @@ export class SwapStore {
       // ${...} braces are required: "$cl_mapname.cfg" would parse the macro
       // name as "cl_mapname.cfg" and expand to nothing (engine-verified).
       'set cl_beginmapcmd "exec texswap/${cl_mapname}.cfg"',
-      'bind F9 "exec texswap/${cl_mapname}.cfg"',
+      // manual re-apply always forces a texture reload, so removing swaps
+      // reverts visually even when the cfg itself carries no r_reload
+      'bind F9 "exec texswap/${cl_mapname}.cfg; r_reload"',
       '',
     ].join('\n');
     const hookPath = path.join(this.dir, 'hook.cfg');

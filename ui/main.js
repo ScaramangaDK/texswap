@@ -147,6 +147,15 @@ function renderHook() {
   toggle.addEventListener('click', toggleEnabled);
   area.appendChild(toggle);
 
+  const light = document.createElement('button');
+  const managed = state.scan.lighting && state.scan.lighting.manage;
+  light.innerHTML = managed ? 'Lighting<span class="dot"></span>' : 'Lighting';
+  light.title = managed
+    ? 'Lighting management is ON - click to edit global defaults'
+    : 'Set up managed lighting defaults (gl_modulate & co.)';
+  light.addEventListener('click', openGlobalLighting);
+  area.appendChild(light);
+
   const imp = document.createElement('button');
   imp.textContent = 'Import preset…';
   imp.title = 'Load a .aq2swap.json file from a friend';
@@ -276,8 +285,15 @@ function renderDetail() {
   else $('skyThumb').removeAttribute('src');
 
   const resetBtn = $('resetMapBtn');
-  resetBtn.classList.toggle('hidden', !d.swapCount);
+  const hasWork = d.swapCount > 0 || d.lighting;
+  resetBtn.classList.toggle('hidden', !hasWork);
   resetBtn.textContent = `Reset map (${d.swapCount})`;
+
+  const lightBtn = $('mapLightBtn');
+  lightBtn.innerHTML = d.lighting ? 'Lighting<span class="dot"></span>' : 'Lighting';
+  lightBtn.title = d.lighting
+    ? 'This map has a lighting override - click to edit'
+    : 'Per-map lighting override';
 
   renderPresetRow();
   renderGrid();
@@ -767,6 +783,150 @@ async function openSkyPicker() {
 
 // ---------- wiring ----------
 
+// ---------- lighting ----------
+
+const LIGHT_CVARS = [
+  { key: 'gl_modulate', label: 'Light boost (overall)', hint: '1 = stock, 2–3 = common comp values' },
+  { key: 'gl_modulate_world', label: 'Light boost: world', hint: 'world geometry only' },
+  { key: 'gl_modulate_entities', label: 'Light boost: models', hint: 'players, items, weapons' },
+  { key: 'gl_brightness', label: 'Brightness (additive)', hint: '0 = stock; positive lifts dark areas' },
+  { key: 'intensity', label: 'Texture intensity', hint: 'texture brightness multiplier' },
+  { key: 'gl_saturation', label: 'Texture saturation', hint: '1 = full color, 0 = grayscale' },
+  { key: 'gl_coloredlightmaps', label: 'Colored lightmaps', hint: '1 = colored lights, 0 = white' },
+  { key: 'gl_dynamic', label: 'Dynamic lights', hint: '1 = on, 0 = off (muzzle flashes etc.)' },
+  { key: 'gl_picmip', label: 'Texture detail reduction', hint: '0 = full detail; higher = blurrier' },
+  { key: 'r_override_textures', label: 'Hi-res overrides', hint: '1 = allow png/tga/jpg replacements' },
+  { key: 'r_texture_overrides', label: 'Override mask', hint: 'your 15 = world low-res / 31 = world hi-res' },
+];
+
+function buildLightForm(container, values, placeholders) {
+  container.textContent = '';
+  const inputs = {};
+  for (const c of LIGHT_CVARS) {
+    const row = document.createElement('div');
+    row.className = 'lrow';
+    const label = document.createElement('label');
+    label.textContent = c.label;
+    label.title = c.key;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.spellcheck = false;
+    input.value = values && values[c.key] !== undefined ? values[c.key] : '';
+    input.placeholder = placeholders && placeholders[c.key] !== undefined ? placeholders[c.key] : '';
+    if (input.value !== '') input.classList.add('set');
+    input.addEventListener('input', () => input.classList.toggle('set', input.value.trim() !== ''));
+    const hint = document.createElement('span');
+    hint.className = 'lhint';
+    hint.textContent = `${c.key} — ${c.hint}`;
+    if (c.key === 'r_texture_overrides') {
+      const wrap = document.createElement('div');
+      wrap.className = 'lquick';
+      for (const v of ['15', '31']) {
+        const b = document.createElement('button');
+        b.textContent = v;
+        b.title = v === '15' ? 'world textures low-res' : 'world textures hi-res';
+        b.addEventListener('click', () => { input.value = v; input.classList.add('set'); });
+        wrap.appendChild(b);
+      }
+      wrap.prepend(input);
+      input.style.width = '52px';
+      row.append(label, wrap, hint);
+    } else {
+      row.append(label, input, hint);
+    }
+    container.appendChild(row);
+    inputs[c.key] = input;
+  }
+  return () => {
+    const out = {};
+    for (const [k, input] of Object.entries(inputs)) {
+      const v = input.value.trim();
+      if (v !== '') out[k] = v;
+    }
+    return out;
+  };
+}
+
+function openGlobalLighting() {
+  const L = state.scan.lighting || { manage: false, global: {}, extra: '' };
+  openModal(`
+    <div class="mhead">
+      <h3>Lighting — global defaults</h3>
+      <button class="mclose">✕</button>
+    </div>
+    <div class="mbody">
+      <label class="lmanage"><input type="checkbox" id="lManage" ${L.manage ? 'checked' : ''}>
+        Let the app manage these settings (written into every map cfg)</label>
+      <p style="color:var(--dim);font-size:12.5px;margin-bottom:12px">
+        Empty fields are left alone. Per-map overrides win over these defaults.
+        Applies on map load / F9.</p>
+      <div class="lightform" id="lForm"></div>
+      <div class="sectionhead">Extra cfg lines (advanced)</div>
+      <textarea id="lExtra" class="lextra" spellcheck="false"
+        placeholder='e.g.  set gl_dlight_falloff "1"'>${L.extra || ''}</textarea>
+    </div>
+    <div class="mfoot">
+      <button class="primary" id="lSave">Save lighting</button>
+    </div>
+  `);
+  const collect = buildLightForm($('lForm'), L.global, null);
+  $('lSave').addEventListener('click', async () => {
+    const payload = {
+      manage: $('lManage').checked,
+      global: collect(),
+      extra: $('lExtra').value,
+    };
+    closeModal();
+    try {
+      const r = await apiPost('/api/lighting', { lighting: payload });
+      state.scan.lighting = r.lighting;
+      renderHook();
+      reportWritten(r);
+      toast(r.lighting.manage ? 'Lighting saved - applies on map load / F9' : 'Lighting management turned off');
+      if (state.activeMap) selectMap(state.activeMap);
+    } catch (e) {
+      toast('Lighting save failed: ' + e.message, true);
+    }
+  });
+}
+
+function openMapLighting() {
+  const d = state.detail;
+  if (!d) return;
+  const globals = (state.scan.lighting && state.scan.lighting.global) || {};
+  openModal(`
+    <div class="mhead">
+      <h3>Lighting override for <span class="mono">${d.name}</span></h3>
+      <button class="mclose">✕</button>
+    </div>
+    <div class="mbody">
+      <p style="color:var(--dim);font-size:12.5px;margin-bottom:12px">
+        Only filled fields override your global defaults (shown as placeholders).
+        ${d.lightingManaged ? '' : '<b style="color:var(--accent2)">Note: lighting management is OFF - turn it on under the header Lighting button for any of this to apply.</b>'}</p>
+      <div class="lightform" id="lForm"></div>
+    </div>
+    <div class="mfoot">
+      <button class="danger" id="lClear">Clear override</button>
+      <button class="primary" id="lSave">Save override</button>
+    </div>
+  `);
+  const collect = buildLightForm($('lForm'), d.lighting, globals);
+  $('lClear').addEventListener('click', async () => {
+    closeModal();
+    try {
+      applyMutation(await apiPost('/api/maplighting', { map: d.name, lighting: null }));
+      toast('Lighting override cleared');
+    } catch (e) { toast('Failed: ' + e.message, true); }
+  });
+  $('lSave').addEventListener('click', async () => {
+    closeModal();
+    try {
+      applyMutation(await apiPost('/api/maplighting', { map: d.name, lighting: collect() }));
+      toast('Lighting override saved - F9 in game to apply');
+    } catch (e) { toast('Failed: ' + e.message, true); }
+  });
+}
+
 // ---------- folder browser & help ----------
 
 async function openBrowser(startPath) {
@@ -865,6 +1025,7 @@ $('sortSel').addEventListener('change', renderGrid);
 $('showUtility').addEventListener('change', renderGrid);
 $('skyCard').addEventListener('click', openSkyPicker);
 $('resetMapBtn').addEventListener('click', resetMap);
+$('mapLightBtn').addEventListener('click', openMapLighting);
 $('importFile').addEventListener('change', e => {
   if (e.target.files.length) importPresetFile(e.target.files[0]);
   e.target.value = '';

@@ -68,6 +68,9 @@ Stack: **Electron** (Node backend + web UI) → portable .exe (~90 MB), and the 
 
 - **2026-08-31 — Feedback round 1** (user request): fixed grid pattern (lines now centered per tile → true symmetric grid, previews and tiling both clean); added checker/stripes/diagonal patterns with visual style buttons; Flat tab now also offers the user's **ralle_colors** Quake-palette WALs (246 flats in `action/textures/ralle_colors`) as a clickable palette; folder **Browse…** dialog with "looks like an AQ2 install" detection plus a **?** help popup for the path; active preset chip is highlighted.
 
+- **2026-08-31 — Lighting milestone**: opt-in managed lighting — global defaults + per-map overrides for `gl_modulate`, `gl_modulate_world/entities`, `gl_brightness`, `intensity`, `gl_saturation`, `gl_coloredlightmaps`, `gl_dynamic`, `gl_picmip`, `r_override_textures`, `r_texture_overrides` (15/31 quick buttons) + free-form extra cfg lines. Written into every map cfg when managed so nothing leaks between maps; included in saved presets and export/import. Also fixed user-reported bug: clearing a swap + F9 didn't revert visually (touched maps now always `r_reload`, and the F9 bind appends `r_reload` too).
+- **Confirmed final scope before packaging** (user, 2026-08-31): 3D viewer, custom image import, sound swaps, team pack sharing, polish — THEN the portable .exe.
+
 ## Verified engine facts (tested against AQtion q2proded + source, 2026-08-31)
 
 - **`softlink` is fallback-only** — it fires only when the requested file does not exist. **`link` (hard) expands before the file search and overrides existing files → the app uses `link`.** Same syntax; `unlink --all` clears only hard links (AQtion's shipped soft links live in a separate list — clean namespace separation).
@@ -80,7 +83,8 @@ Stack: **Electron** (Node backend + web UI) → portable .exe (~90 MB), and the 
 
 - **V1 (core)**: everything above, including skybox swapping. Test in-game on user's machine, then beta with one friend.
 - **V2 (wow)**: built-in 3D map viewer — renders the actual BSP with lightmaps in the app, click a wall to select its texture, swaps preview instantly without the game running.
-- **V3 (presets+)**: ~~named presets + export/import files~~ ✔ done. Remaining: lighting presets (`gl_modulate`, `gl_modulate_world`, `gl_brightness`, `intensity`, …) saved alongside texture presets; hi/low-res toggle (`r_texture_overrides` 15/31) per preset; custom image import; sound swaps; "team pack" bundle sharing; **Electron shell + portable .exe** (next big one — friends can't use the dev server).
+- **V3 (presets+)**: ~~named presets + export/import files~~ ✔ done. Remaining: lighting presets (`gl_modulate`, `gl_modulate_world`, `gl_brightness`, `intensity`, …) saved alongside texture presets; hi/low-res toggle (`r_texture_overrides` 15/31) per preset; custom image import; sound swaps; "team pack" bundle sharing.
+- **Packaging (LAST)**: Electron shell + portable .exe ships only when the app is feature-complete and polished — user decision 2026-08-31: friends get the finished version, not a beta.
 - **V4 (the hub)**: the app becomes the everyday AQ2 launcher:
   *(note: user starts the game via `q2pro.exe`, not the `aqtion.exe` stub — make the launch exe configurable)*
   - **Player setup**: edit nick, skin/model, and common client settings from a friendly UI (writes cvars like `name`/`skin` to cfg)

@@ -49,6 +49,7 @@ function scanResult(inst) {
     hasPalette: Boolean(inst.palette),
     hook: inst.swaps.hookStatus(),
     swapsEnabled: inst.swaps.enabled,
+    lighting: inst.swaps.lightingConfig(),
     maps: inst.listMaps(),
   };
 }
@@ -112,6 +113,15 @@ async function handleApi(req, url, res) {
       case '/api/enabled': {
         const result = inst.swaps.setEnabled(body.enabled);
         return json(res, 200, { ok: true, ...result, enabled: inst.swaps.enabled });
+      }
+      case '/api/lighting': {
+        const result = inst.swaps.setLighting(body.lighting);
+        return json(res, 200, { ok: true, ...result, lighting: inst.swaps.lightingConfig() });
+      }
+      case '/api/maplighting': {
+        if (!body.map) return json(res, 400, { error: 'need map' });
+        const result = inst.swaps.setMapLighting(body.map, body.lighting);
+        return json(res, 200, { ok: true, ...result, detail: inst.mapDetail(body.map) });
       }
       case '/api/preset/save': {
         const name = inst.swaps.savePreset(body.map, body.name);

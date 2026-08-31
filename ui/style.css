@@ -508,3 +508,48 @@ button.off { border-color: var(--bad); color: var(--bad); }
 .bhint { color: #6fdc8f; font-size: 12.5px; margin-top: 10px; }
 .helpbody p { margin-bottom: 10px; color: var(--text); }
 .helpbody code { color: var(--accent2); font-family: Consolas, monospace; }
+
+/* lighting form */
+.lightform { display: flex; flex-direction: column; gap: 8px; }
+.lrow {
+  display: grid;
+  grid-template-columns: 200px 90px 1fr;
+  gap: 10px;
+  align-items: center;
+}
+.lrow label { font-size: 13px; }
+.lrow input[type=text] {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-family: Consolas, monospace;
+  font-size: 13px;
+  width: 100%;
+}
+.lrow .lhint { color: var(--dim); font-size: 11.5px; }
+.lrow input.set { border-color: var(--accent); }
+.lquick { display: flex; gap: 6px; }
+.lquick button { padding: 4px 9px; font-size: 12px; }
+.lextra {
+  width: 100%;
+  min-height: 64px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: Consolas, monospace;
+  font-size: 12.5px;
+  resize: vertical;
+}
+.lmanage { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; font-size: 14px; }
+button .dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-left: 6px;
+  vertical-align: 1px;
+}
