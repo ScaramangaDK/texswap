@@ -110,12 +110,14 @@ async function open(detail) {
   // lifts pitch-black bakes so texture detail stays visible in dark rooms
   const Lg = AQTS.state.scan && AQTS.state.scan.lighting;
   const gb = Lg && Lg.manage && Lg.global && Lg.global.gl_brightness ? parseFloat(Lg.global.gl_brightness) : 0.1;
-  const brightUniform = { value: Math.min(1, Math.max(0, (isNaN(gb) ? 0.1 : gb) * 2.5)) };
+  const baseBright = Math.min(1, Math.max(0, (isNaN(gb) ? 0.1 : gb) * 2.5));
+  const brightUniform = { value: baseBright * (lmIntensity / 3) };
   const brightInput = document.getElementById('vBright');
   brightInput.value = lmIntensity;
   brightInput.oninput = () => {
     const v = parseFloat(brightInput.value);
     localStorage.setItem('aq2ts.vbright', v);
+    brightUniform.value = baseBright * (v / 3);
     if (ctx) for (const m of ctx.meshes) m.material.lightMapIntensity = v;
   };
 
@@ -135,6 +137,7 @@ async function open(detail) {
     yaw: 0, pitch: 0,
     timeUniform: { value: 0 },
   };
+  window.AQV = ctx;
 
   // quake (x, y, z-up) -> three (x, z, -y)
   let maskedCount = 0;
@@ -176,20 +179,20 @@ async function open(detail) {
       : new THREE.MeshLambertMaterial(common);
     if (lightMap) {
       // one shader patch: additive gl_brightness for everything, plus classic
-      // q2 warp undulation and engine-rate flowing scroll (64 texels/sec, -U)
+      // q2 warp undulation and engine-rate flowing scroll along -U: water
+      // (warp) runs 64 texels per 2s, conveyors 64 texels per 40s (ref_gl)
       const warp = g.flags.includes('warp');
-      const flow = g.flags.includes('flowing') ? 64 / (g.texW || 64) : 0;
+      const flow = g.flags.includes('flowing') ? (warp ? 32 : 1.6) / (g.texW || 64) : 0;
+      // distinct cache key per shader variant - otherwise three reuses one
+      // compiled program across materials and the patches get cross-assigned
+      mat.customProgramCacheKey = () => `aq2_${warp ? 'w' : ''}_${flow.toFixed(5)}`;
       mat.onBeforeCompile = shader => {
         shader.uniforms.uTime = ctx.timeUniform;
         shader.uniforms.uBright = brightUniform;
+        // meshbasic inlines its lightmap accumulation (no lightmap_fragment chunk)
         shader.fragmentShader = 'uniform float uTime;\nuniform float uBright;\n' + shader.fragmentShader.replace(
-          '#include <lightmap_fragment>',
-          `#ifdef USE_LIGHTMAP
-            vec4 lightMapTexel = texture2D( lightMap, vLightMapUv );
-            reflectedLight.indirectDiffuse += lightMapTexel.rgb * lightMapIntensity * RECIPROCAL_PI + vec3( uBright );
-          #else
-            reflectedLight.indirectDiffuse += vec3( 1.0 );
-          #endif`,
+          'reflectedLight.indirectDiffuse += lightMapTexel.rgb * lightMapIntensity * RECIPROCAL_PI;',
+          'reflectedLight.indirectDiffuse += lightMapTexel.rgb * lightMapIntensity * RECIPROCAL_PI + vec3( uBright );',
         );
         if (warp || flow) {
           shader.fragmentShader = shader.fragmentShader.replace(
