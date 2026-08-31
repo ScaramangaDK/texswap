@@ -1060,7 +1060,7 @@ async function renderFlatTab(t) {
       <div class="sectionhead">Pattern color &amp; size</div>
       <div class="flatrow">
         <span class="count">Pattern size:</span>
-        <button class="scbtn" data-sc="0.5">½×</button>
+        <button class="scbtn" data-sc="0.5">0.5×</button>
         <button class="scbtn" data-sc="1">1×</button>
         <button class="scbtn" data-sc="2">2×</button>
         <button class="scbtn" data-sc="4">4×</button>
@@ -1381,7 +1381,7 @@ async function openMissingFix() {
       <div class="stylerow" id="mfStyles"></div>
       <div class="flatrow" id="mfScaleRow">
         <span class="count">Pattern size:</span>
-        <button class="scbtn" data-sc="0.5">½×</button>
+        <button class="scbtn" data-sc="0.5">0.5×</button>
         <button class="scbtn" data-sc="1">1×</button>
         <button class="scbtn" data-sc="2">2×</button>
         <button class="scbtn" data-sc="4">4×</button>
