@@ -545,6 +545,16 @@ button.off { border-color: var(--bad); color: var(--bad); }
   resize: vertical;
 }
 .lmanage { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; font-size: 14px; }
+.scopenote {
+  border-left: 3px solid;
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  background: var(--bg);
+}
+.scopenote.global { border-color: #3fa7ff; color: #a9d4ff; }
+.scopenote.map { border-color: var(--accent); color: var(--accent2); }
 button .dot {
   display: inline-block;
   width: 7px; height: 7px;

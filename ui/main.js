@@ -149,11 +149,11 @@ function renderHook() {
 
   const light = document.createElement('button');
   const managed = state.scan.lighting && state.scan.lighting.manage;
-  light.innerHTML = managed ? 'Lighting<span class="dot"></span>' : 'Lighting';
+  light.innerHTML = managed ? '🌍 Lighting<span class="dot"></span>' : '🌍 Lighting';
   light.title = managed
-    ? 'Lighting management is ON - click to edit global defaults'
-    : 'Set up managed lighting defaults (gl_modulate & co.)';
-  light.addEventListener('click', openGlobalLighting);
+    ? 'Lighting management is ON - edit the global (all maps) defaults'
+    : 'Set up managed lighting defaults for all maps (gl_modulate & co.)';
+  light.addEventListener('click', () => openLighting('global'));
   area.appendChild(light);
 
   const imp = document.createElement('button');
@@ -290,10 +290,10 @@ function renderDetail() {
   resetBtn.textContent = `Reset map (${d.swapCount})`;
 
   const lightBtn = $('mapLightBtn');
-  lightBtn.innerHTML = d.lighting ? 'Lighting<span class="dot"></span>' : 'Lighting';
+  lightBtn.innerHTML = d.lighting ? '📍 Map lighting<span class="dot"></span>' : '📍 Map lighting';
   lightBtn.title = d.lighting
-    ? 'This map has a lighting override - click to edit'
-    : 'Per-map lighting override';
+    ? `${d.name} has its own lighting override - click to edit`
+    : `Override the global lighting on ${d.name} only`;
 
   renderPresetRow();
   renderGrid();
@@ -813,7 +813,7 @@ function buildLightForm(container, values, placeholders) {
     input.type = 'text';
     input.spellcheck = false;
     input.value = values && values[c.key] !== undefined ? values[c.key] : '';
-    input.placeholder = placeholders && placeholders[c.key] !== undefined ? placeholders[c.key] : '';
+    input.placeholder = placeholders && placeholders[c.key] !== undefined ? 'global: ' + placeholders[c.key] : '';
     if (input.value !== '') input.classList.add('set');
     input.addEventListener('input', () => input.classList.toggle('set', input.value.trim() !== ''));
     const hint = document.createElement('span');
@@ -833,33 +833,70 @@ function buildLightForm(container, values, placeholders) {
   };
 }
 
-function openGlobalLighting() {
+// One dialog, two clearly-scoped tabs: global defaults vs this-map override.
+function openLighting(startTab) {
   const L = state.scan.lighting || { manage: false, global: {}, extra: '' };
+  const d = state.detail;
+  const hasMap = Boolean(d);
   openModal(`
     <div class="mhead">
-      <h3>Lighting — global defaults</h3>
+      <h3>Lighting</h3>
       <button class="mclose">✕</button>
     </div>
+    <div class="tabs">
+      <button id="lTabGlobal">🌍 Global — all maps</button>
+      ${hasMap ? `<button id="lTabMap">📍 Only <span class="mono">${d.name}</span></button>` : ''}
+    </div>
     <div class="mbody">
-      <label class="lmanage"><input type="checkbox" id="lManage" ${L.manage ? 'checked' : ''}>
-        Let the app manage these settings (written into every map cfg)</label>
-      <p style="color:var(--dim);font-size:12.5px;margin-bottom:12px">
-        Empty fields are left alone. Per-map overrides win over these defaults.
-        Applies on map load / F9.</p>
-      <div class="lightform" id="lForm"></div>
-      <div class="sectionhead">Extra cfg lines (advanced)</div>
-      <textarea id="lExtra" class="lextra" spellcheck="false"
-        placeholder='e.g.  set gl_dlight_falloff "1"'>${L.extra || ''}</textarea>
+      <div id="lgPane">
+        <p class="scopenote global">These are your defaults for <b>every map</b>. A map with its own override uses its values instead.</p>
+        <label class="lmanage"><input type="checkbox" id="lManage" ${L.manage ? 'checked' : ''}>
+          Let the app manage lighting (written into every map cfg, applies on map load / F9)</label>
+        <div class="lightform" id="lgForm"></div>
+        <div class="sectionhead">Extra cfg lines (advanced)</div>
+        <textarea id="lExtra" class="lextra" spellcheck="false"
+          placeholder='e.g.  set gl_dlight_falloff "1"'>${L.extra || ''}</textarea>
+      </div>
+      ${hasMap ? `
+      <div id="lmPane" class="hidden">
+        <p class="scopenote map">This overrides your globals <b>only on ${d.name}</b>. Empty fields keep the global value (shown in grey).
+        ${L.manage ? '' : '<br><b>Lighting management is OFF — enable it on the Global tab first.</b>'}</p>
+        <div class="lightform" id="lmForm"></div>
+      </div>` : ''}
     </div>
     <div class="mfoot">
-      <button class="primary" id="lSave">Save lighting</button>
+      <span id="lgFoot">
+        <button class="primary" id="lgSave">Save global defaults</button>
+      </span>
+      ${hasMap ? `
+      <span id="lmFoot" class="hidden">
+        <button class="danger" id="lmClear">Clear this map's override</button>
+        <button class="primary" id="lmSave">Save override for ${d.name}</button>
+      </span>` : ''}
     </div>
   `);
-  const collect = buildLightForm($('lForm'), L.global, null);
-  $('lSave').addEventListener('click', async () => {
+
+  const collectGlobal = buildLightForm($('lgForm'), L.global, null);
+  const collectMap = hasMap ? buildLightForm($('lmForm'), d.lighting, L.global) : null;
+
+  const setTab = tab => {
+    $('lTabGlobal').classList.toggle('active', tab === 'global');
+    $('lgPane').classList.toggle('hidden', tab !== 'global');
+    $('lgFoot').classList.toggle('hidden', tab !== 'global');
+    if (hasMap) {
+      $('lTabMap').classList.toggle('active', tab === 'map');
+      $('lmPane').classList.toggle('hidden', tab !== 'map');
+      $('lmFoot').classList.toggle('hidden', tab !== 'map');
+    }
+  };
+  $('lTabGlobal').addEventListener('click', () => setTab('global'));
+  if (hasMap) $('lTabMap').addEventListener('click', () => setTab('map'));
+  setTab(startTab === 'map' && hasMap ? 'map' : 'global');
+
+  $('lgSave').addEventListener('click', async () => {
     const payload = {
       manage: $('lManage').checked,
-      global: collect(),
+      global: collectGlobal(),
       extra: $('lExtra').value,
     };
     closeModal();
@@ -868,49 +905,29 @@ function openGlobalLighting() {
       state.scan.lighting = r.lighting;
       renderHook();
       reportWritten(r);
-      toast(r.lighting.manage ? 'Lighting saved - applies on map load / F9' : 'Lighting management turned off');
+      toast(r.lighting.manage ? 'Global lighting saved - applies on map load / F9' : 'Lighting management turned off');
       if (state.activeMap) selectMap(state.activeMap);
     } catch (e) {
       toast('Lighting save failed: ' + e.message, true);
     }
   });
-}
 
-function openMapLighting() {
-  const d = state.detail;
-  if (!d) return;
-  const globals = (state.scan.lighting && state.scan.lighting.global) || {};
-  openModal(`
-    <div class="mhead">
-      <h3>Lighting override for <span class="mono">${d.name}</span></h3>
-      <button class="mclose">✕</button>
-    </div>
-    <div class="mbody">
-      <p style="color:var(--dim);font-size:12.5px;margin-bottom:12px">
-        Only filled fields override your global defaults (shown as placeholders).
-        ${d.lightingManaged ? '' : '<b style="color:var(--accent2)">Note: lighting management is OFF - turn it on under the header Lighting button for any of this to apply.</b>'}</p>
-      <div class="lightform" id="lForm"></div>
-    </div>
-    <div class="mfoot">
-      <button class="danger" id="lClear">Clear override</button>
-      <button class="primary" id="lSave">Save override</button>
-    </div>
-  `);
-  const collect = buildLightForm($('lForm'), d.lighting, globals);
-  $('lClear').addEventListener('click', async () => {
-    closeModal();
-    try {
-      applyMutation(await apiPost('/api/maplighting', { map: d.name, lighting: null }));
-      toast('Lighting override cleared');
-    } catch (e) { toast('Failed: ' + e.message, true); }
-  });
-  $('lSave').addEventListener('click', async () => {
-    closeModal();
-    try {
-      applyMutation(await apiPost('/api/maplighting', { map: d.name, lighting: collect() }));
-      toast('Lighting override saved - F9 in game to apply');
-    } catch (e) { toast('Failed: ' + e.message, true); }
-  });
+  if (hasMap) {
+    $('lmClear').addEventListener('click', async () => {
+      closeModal();
+      try {
+        applyMutation(await apiPost('/api/maplighting', { map: d.name, lighting: null }));
+        toast(`Lighting override cleared - ${d.name} uses the globals again`);
+      } catch (e) { toast('Failed: ' + e.message, true); }
+    });
+    $('lmSave').addEventListener('click', async () => {
+      closeModal();
+      try {
+        applyMutation(await apiPost('/api/maplighting', { map: d.name, lighting: collectMap() }));
+        toast(`Lighting override for ${d.name} saved - F9 in game to apply`);
+      } catch (e) { toast('Failed: ' + e.message, true); }
+    });
+  }
 }
 
 // ---------- folder browser & help ----------
@@ -1011,7 +1028,7 @@ $('sortSel').addEventListener('change', renderGrid);
 $('showUtility').addEventListener('change', renderGrid);
 $('skyCard').addEventListener('click', openSkyPicker);
 $('resetMapBtn').addEventListener('click', resetMap);
-$('mapLightBtn').addEventListener('click', openMapLighting);
+$('mapLightBtn').addEventListener('click', () => openLighting('map'));
 $('importFile').addEventListener('change', e => {
   if (e.target.files.length) importPresetFile(e.target.files[0]);
   e.target.value = '';
