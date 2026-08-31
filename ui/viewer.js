@@ -7,15 +7,17 @@ let ctx = null;
 function urlForGroup(name, detail, isTrans) {
   const t = detail && detail.textures.find(x => x.name === name);
   const AQTS = window.AQTS;
+  // trans surfaces: always load the .wal with palette-255 masking — hi-res
+  // conversions often have the salmon "transparent color" baked in opaquely
   if (t && t.swap) {
     if (t.swap.type === 'invisible') return { invisible: true, trans: t.flags.some(f => f.startsWith('trans')) };
     if (t.swap.type === 'stock' && isTrans) {
-      return { url: AQTS.thumbUrl({ tex: t.swap.to, size: 256, alpha: 1 }) };
+      return { url: AQTS.thumbUrl({ tex: t.swap.to, size: 256, alpha: 1, res: 'low' }) };
     }
     return { url: AQTS.swapThumbUrl(t.swap, 256) };
   }
   const params = { tex: name, size: 256 };
-  if (isTrans) params.alpha = 1;
+  if (isTrans) { params.alpha = 1; params.res = 'low'; }
   return { url: AQTS.thumbUrl(params) };
 }
 
