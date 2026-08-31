@@ -397,8 +397,9 @@ export class SwapStore {
   #ensureGen(spec, ext, warnings) {
     let fileBase, make, alwaysWrite = false;
     if (spec.type === 'flat') {
-      fileBase = `flat-${spec.color.replace('#', '')}-${spec.style || 'solid'}`;
-      make = () => encodeAs(ext, flatImage(spec.color, spec.style), this.install.palette, fileBase);
+      const c2 = spec.color2 ? '-' + spec.color2.replace('#', '') : '';
+      fileBase = `flat-${spec.color.replace('#', '')}-${spec.style || 'solid'}${c2}`;
+      make = () => encodeAs(ext, flatImage(spec.color, spec.style, 128, spec.color2 || null), this.install.palette, fileBase);
       alwaysWrite = true; // cheap to generate; guarantees pattern tweaks reach disk
     } else if (spec.type === 'stock') {
       fileBase = sanitize(spec.to);

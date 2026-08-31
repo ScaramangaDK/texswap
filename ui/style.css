@@ -797,6 +797,23 @@ footer code { color: var(--accent-hi); font-family: var(--mono); }
   line-height: 1;
 }
 
+.palgrid {
+  display: grid;
+  grid-template-columns: repeat(32, 15px);
+  gap: 2px;
+  margin: 6px 0 10px;
+}
+.palswatch {
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.palswatch:hover { border-color: var(--accent-hi); transform: scale(1.25); }
+.palswatch.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 .favbtn {
   position: absolute;
   top: 4px;

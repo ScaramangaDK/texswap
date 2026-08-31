@@ -67,7 +67,11 @@ function thumbUrl(params) {
 }
 
 function swapThumbUrl(spec, size) {
-  if (spec.type === 'flat') return thumbUrl({ flat: spec.color, style: spec.style || 'solid', size });
+  if (spec.type === 'flat') {
+    const p = { flat: spec.color, style: spec.style || 'solid', size };
+    if (spec.color2) p.color2 = spec.color2;
+    return thumbUrl(p);
+  }
   if (spec.type === 'custom') return thumbUrl({ custom: spec.file, size });
   if (spec.type === 'invisible') return null;
   return thumbUrl({ tex: spec.to, size });
@@ -75,7 +79,7 @@ function swapThumbUrl(spec, size) {
 
 function swapLabel(spec) {
   switch (spec.type) {
-    case 'flat': return `→ flat ${spec.color}`;
+    case 'flat': return `→ flat ${spec.color}${spec.style && spec.style !== 'solid' ? ` · ${spec.style}${spec.color2 ? ' ' + spec.color2 : ''}` : ''}`;
     case 'custom': return `→ your image${spec.w ? ` (${spec.w}×${spec.h})` : ''}`;
     case 'invisible': return '→ invisible';
     default: return `→ ${spec.to}`;
@@ -1019,6 +1023,7 @@ async function renderFlatTab(t) {
   const cur = t.swap && t.swap.type === 'flat' ? t.swap : null;
   let color = cur ? cur.color : '#9aa0a8';
   let style = cur && cur.style ? cur.style : 'solid';
+  let color2 = cur && cur.color2 ? cur.color2 : null; // null = auto darker shade
   let updateRalleHint = () => {};
   const body = $('mbody');
   body.innerHTML = `
@@ -1030,29 +1035,84 @@ async function renderFlatTab(t) {
       <img id="flatPreview" class="flatpreview" alt="preview">
       <button class="primary" id="flatApply">Use this</button>
     </div>
+    <div id="patternSection" class="hidden">
+      <div class="sectionhead">Pattern color</div>
+      <div class="flatrow">
+        <label><input type="checkbox" id="patAuto"> auto (darker shade of the base)</label>
+        <label>Custom: <input type="color" id="flatColor2"></label>
+      </div>
+      <p class="mnote" style="margin:6px 0 4px">…or pick from the Quake 2 palette:</p>
+      <div class="palgrid" id="palGrid"></div>
+    </div>
     <div id="ralleSection"></div>
   `;
   const colorInput = $('flatColor');
   const preview = $('flatPreview');
   const styleRow = $('styleRow');
+  const patSection = $('patternSection');
+  const patAuto = $('patAuto');
+  const color2Input = $('flatColor2');
 
+  const autoShade = () => {
+    const v = colorInput.value;
+    const [r, g, b] = [1, 3, 5].map(i => Math.max(0, parseInt(v.slice(i, i + 2), 16) - 28));
+    return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+  };
+  const syncPattern = () => {
+    patSection.classList.toggle('hidden', style === 'solid');
+    patAuto.checked = !color2;
+    color2Input.value = color2 || autoShade();
+    $('palGrid').querySelectorAll('.palswatch').forEach(x =>
+      x.classList.toggle('sel', !!color2 && x.dataset.c === color2));
+  };
+  const thumbParams = (base, s, size) => {
+    const p = { flat: base, style: s, size };
+    if (color2 && s !== 'solid') p.color2 = color2;
+    return p;
+  };
   const renderStyles = () => {
     styleRow.textContent = '';
     for (const s of FLAT_STYLES) {
       const b = document.createElement('button');
       b.className = 'stylebtn' + (s.id === style ? ' sel' : '');
       const img = document.createElement('img');
-      img.src = thumbUrl({ flat: colorInput.value, style: s.id, size: 52 });
+      img.src = thumbUrl(thumbParams(colorInput.value, s.id, 52));
       const label = document.createElement('span');
       label.textContent = s.label;
       b.append(img, label);
-      b.addEventListener('click', () => { style = s.id; renderStyles(); updatePreview(); updateRalleHint(); });
+      b.addEventListener('click', () => { style = s.id; renderStyles(); updatePreview(); updateRalleHint(); syncPattern(); });
       styleRow.appendChild(b);
     }
   };
   const updatePreview = () => {
-    preview.src = thumbUrl({ flat: colorInput.value, style, size: 96 });
+    preview.src = thumbUrl(thumbParams(colorInput.value, style, 96));
   };
+
+  // Quake 2 palette swatches for the pattern color
+  try {
+    const pal = await fetch(`/api/palette?dir=${encodeURIComponent(state.dir)}`).then(r => r.json());
+    const grid = $('palGrid');
+    for (const c of pal.colors || []) {
+      const b = document.createElement('button');
+      b.className = 'palswatch';
+      b.style.background = c;
+      b.title = c;
+      b.dataset.c = c;
+      b.addEventListener('click', () => {
+        color2 = c;
+        renderStyles(); updatePreview(); syncPattern();
+      });
+      grid.appendChild(b);
+    }
+  } catch { /* no palette - the color input still works */ }
+  patAuto.addEventListener('change', () => {
+    color2 = patAuto.checked ? null : color2Input.value;
+    renderStyles(); updatePreview(); syncPattern();
+  });
+  color2Input.addEventListener('input', () => {
+    color2 = color2Input.value;
+    renderStyles(); updatePreview(); syncPattern();
+  });
 
   const sw = $('swatches');
   const recents = (state.detail && state.detail.recentFlats) || [];
@@ -1072,6 +1132,7 @@ async function renderFlatTab(t) {
         b.classList.add('sel');
         renderStyles();
         updatePreview();
+        syncPattern();
       });
       sw.appendChild(b);
     }
@@ -1081,13 +1142,16 @@ async function renderFlatTab(t) {
     hint.textContent = 'Flat colors you use will show up here for quick re-picking.';
     sw.appendChild(hint);
   }
-  colorInput.addEventListener('input', () => { renderStyles(); updatePreview(); });
+  colorInput.addEventListener('input', () => { color = colorInput.value; renderStyles(); updatePreview(); syncPattern(); });
   $('flatApply').addEventListener('click', () => {
     closeModal();
-    setSwap(t.name, { type: 'flat', color: colorInput.value, style });
+    const spec = { type: 'flat', color: colorInput.value, style };
+    if (style !== 'solid' && color2) spec.color2 = color2;
+    setSwap(t.name, spec);
   });
   renderStyles();
   updatePreview();
+  syncPattern();
 
   // Quake-palette flats (ralle_colors) if this install has them
   const catalog = await ensureCatalog();
@@ -1134,9 +1198,11 @@ async function renderFlatTab(t) {
         }
         try {
           if (!img.complete || !img.naturalWidth) await img.decode();
-          const color = sampleImgColor(img);
+          const picked = sampleImgColor(img);
           closeModal();
-          setSwap(t.name, { type: 'flat', color, style });
+          const spec = { type: 'flat', color: picked, style };
+          if (style !== 'solid' && color2) spec.color2 = color2;
+          setSwap(t.name, spec);
         } catch {
           toast('Could not read that color yet - click again once its thumbnail has loaded', true);
         }

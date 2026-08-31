@@ -127,8 +127,10 @@ async function handleApi(req, url, res) {
               return json(res, 400, { error: 'replacement texture not found: ' + body.spec.to });
             }
           } else if (body.spec.type === 'flat') {
-            try { parseColor(body.spec.color); }
-            catch (e) { return json(res, 400, { error: e.message }); }
+            try {
+              parseColor(body.spec.color);
+              if (body.spec.color2) parseColor(body.spec.color2);
+            } catch (e) { return json(res, 400, { error: e.message }); }
           } else {
             return json(res, 400, { error: 'unknown swap type' });
           }
@@ -266,6 +268,18 @@ async function handleApi(req, url, res) {
     case '/api/skies':
       return json(res, 200, { skies: getInstall(dir).listSkies() });
 
+    case '/api/palette': {
+      // the install's Quake 2 palette (colormap.pcx) as 256 hex colors
+      const p = getInstall(dir).palette;
+      const colors = [];
+      if (p) {
+        for (let i = 0; i < 256; i++) {
+          colors.push('#' + (((p[i * 3] << 16) | (p[i * 3 + 1] << 8) | p[i * 3 + 2]) + 0x1000000).toString(16).slice(1));
+        }
+      }
+      return json(res, 200, { colors });
+    }
+
     case '/api/thumb': {
       const inst = getInstall(dir);
       const size = Math.min(512, Number(q.get('size')) || 128);
@@ -280,7 +294,7 @@ async function handleApi(req, url, res) {
         // generate at the requested size directly - resampling a fixed-size
         // pattern makes thin grid lines look broken
         try {
-          png = encodePng(flatImage(q.get('flat'), q.get('style') || 'solid', size));
+          png = encodePng(flatImage(q.get('flat'), q.get('style') || 'solid', size, q.get('color2') || null));
         } catch { png = null; }
       } else return json(res, 400, { error: 'missing ?tex=, ?sky= or ?flat=' });
       if (!png) { res.writeHead(404); return res.end(); }
