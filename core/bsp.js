@@ -361,7 +361,28 @@ export function extractBspGeometry(buf) {
     // Warp (water) is excluded: its dark bakes are legitimate lighting.
     const OVERLAY_BITS = 16 | 32 | 33554432;
     const avg = lumSum / (w * h * 3);
+    f.lmAvg = avg;
     if ((f.flags & OVERLAY_BITS) && !(f.flags & 8) && avg < 8) f.useGrey = true;
+  }
+
+  // drop exact duplicate faces (identical stacked brushes reference both
+  // copies from leaves): keep the better-lit twin, the buried one is black
+  const byShape = new Map();
+  const dedupedFaces = [];
+  for (const f of facesOut) {
+    const key = f.poly
+      .map(v => `${Math.round(v.pt[0])},${Math.round(v.pt[1])},${Math.round(v.pt[2])}`)
+      .sort()
+      .join('|');
+    const score = f.lm ? (f.lmAvg || 0) : 150; // unlit renders bright-ish
+    const prev = byShape.get(key);
+    if (!prev) {
+      byShape.set(key, { idx: dedupedFaces.length, score });
+      dedupedFaces.push(f);
+    } else if (score > prev.score) {
+      dedupedFaces[prev.idx] = f;
+      prev.score = score;
+    }
   }
 
   // pass 3: triangulate into groups keyed by texture + surface type, so the
@@ -369,7 +390,7 @@ export function extractBspGeometry(buf) {
   const groups = new Map();
   const whiteU = 2 / ATLAS_W, whiteV = 2 / atlasH;
   const greyU = 8 / ATLAS_W, greyV = 2 / atlasH;
-  for (const f of facesOut) {
+  for (const f of dedupedFaces) {
     const key = f.name + '|' + (f.flags & MASKED_BITS);
     let g = groups.get(key);
     if (!g) {

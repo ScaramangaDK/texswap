@@ -132,6 +132,7 @@ async function open(detail) {
   };
 
   // quake (x, y, z-up) -> three (x, z, -y)
+  let maskedCount = 0;
   for (const g of geo.groups) {
     const n = g.positions.length / 3;
     const pos = new Float32Array(n * 3);
@@ -157,10 +158,12 @@ async function open(detail) {
       // alphatest surfaces: opaque where texels exist, hard holes elsewhere;
       // blended trans surfaces still cut their palette-255 holes
       alphaTest: alphatest ? 0.5 : trans ? 0.05 : 0,
-      // overlays are usually coplanar with the wall behind - offset to stop z-fighting
+      // overlays are usually coplanar with the wall behind - offset to stop
+      // z-fighting, each masked group on its own step so coplanar overlays
+      // (fence + inner pass-through brush) get a stable winner at any angle
       polygonOffset: overlay,
       polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1,
+      polygonOffsetUnits: overlay ? -(1 + (maskedCount++ % 6)) : 0,
       depthWrite: !trans,
     };
     const mat = lightMap
