@@ -87,7 +87,7 @@ Stack: **Electron** (Node backend + web UI) → portable .exe (~90 MB), and the 
 ## Roadmap
 
 - **V1 (core)**: everything above, including skybox swapping. Test in-game on user's machine, then beta with one friend.
-- **V2 (wow)**: built-in 3D map viewer — renders the actual BSP with lightmaps in the app, click a wall to select its texture, swaps preview instantly without the game running.
+- **V2 (wow)**: ✔ **shipped 2026-08-31 (v1)** — built-in 3D map viewer: server extracts triangulated per-texture geometry with real texinfo UVs (`/api/mapgeo`, wal-based texel scaling), three.js renders it with the current swaps applied (flat/stock/custom/invisible all honored — invisible shows trans surfaces gone and opaque ones black, mirroring the engine); fly controls (drag-look + WASD/QE/Shift), camera starts at a player spawn, hover shows the texture name, click a surface → "Swap this texture…" opens the picker, and every swap updates the viewer instantly. Remaining polish ideas: lightmaps, skybox rendering, warp-water animation.
 - **V3 (presets+)**: ~~named presets + export/import files~~ ✔ done. Remaining: lighting presets (`gl_modulate`, `gl_modulate_world`, `gl_brightness`, `intensity`, …) saved alongside texture presets; hi/low-res toggle (`r_texture_overrides` 15/31) per preset; custom image import; sound swaps; "team pack" bundle sharing.
 - **Packaging (LAST)**: Electron shell + portable .exe ships only when the app is feature-complete and polished — user decision 2026-08-31: friends get the finished version, not a beta.
 - **V4 (the hub)**: the app becomes the everyday AQ2 launcher:

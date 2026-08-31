@@ -514,6 +514,7 @@ function applyMutation(r) {
   state.detail = r.detail;
   renderDetail();
   reportWritten(r);
+  if (window.AQViewer) window.AQViewer.onSwapsChanged(state.detail);
 }
 
 async function setSwap(from, spec) {
@@ -1467,5 +1468,23 @@ $('importFile').addEventListener('change', e => {
   if (e.target.files.length) importPresetFile(e.target.files[0]);
   e.target.value = '';
 });
+$('view3dBtn').addEventListener('click', () => {
+  if (!state.detail) return;
+  if (window.AQViewer) window.AQViewer.open(state.detail);
+  else toast('3D viewer failed to load', true);
+});
+
+// bridge for the viewer module
+window.AQTS = {
+  state,
+  thumbUrl,
+  swapThumbUrl,
+  toast,
+  openPickerByName: name => {
+    const t = state.detail && state.detail.textures.find(x => x.name === name);
+    if (t) openPicker(t);
+    else toast('Texture not found on this map: ' + name, true);
+  },
+};
 
 boot();

@@ -47,6 +47,7 @@
             <span id="mapMeta" class="meta"></span>
           </div>
           <div class="headactions">
+            <button id="view3dBtn" title="Fly through the map with your swaps applied — click a wall to swap its texture">🧊 3D view</button>
             <button id="mapLightBtn" title="Per-map lighting override">📍 Map lighting</button>
             <button id="resetMapBtn" class="danger hidden">Reset map</button>
             <div class="skycard" id="skyCard" title="Click to change the skybox">
@@ -86,6 +87,22 @@
   <div id="toasts"></div>
   <input type="file" id="importFile" accept=".json,application/json" class="hidden">
 
+  <div id="viewerOverlay" class="hidden">
+    <canvas id="viewerCanvas"></canvas>
+    <div class="vtop">
+      <span id="vMapName" class="mono"></span>
+      <span id="vHover" class="vhover mono"></span>
+      <button id="vClose">✕ close (Esc)</button>
+    </div>
+    <div class="vhelp">drag = look around · WASD move · Q/E down/up · Shift fast · click a surface to select its texture</div>
+    <div id="vSelected" class="vsel hidden">
+      <span id="vSelName" class="mono"></span>
+      <button id="vSwapBtn" class="primary">Swap this texture…</button>
+      <button id="vSelClose">✕</button>
+    </div>
+  </div>
+
   <script src="main.js"></script>
+  <script type="module" src="viewer.js"></script>
 </body>
 </html>

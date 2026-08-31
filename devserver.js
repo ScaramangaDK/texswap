@@ -61,6 +61,15 @@ const server = http.createServer(async (req, res) => {
   try {
     if (url.pathname.startsWith('/api/')) return await handleApi(req, url, res);
 
+    if (url.pathname.startsWith('/vendor/')) {
+      const name = url.pathname.slice('/vendor/'.length);
+      if (!/^[a-z0-9_.-]+\.js$/i.test(name)) { res.writeHead(404); return res.end(); }
+      const vfile = path.join(ROOT, 'node_modules', 'three', 'build', name);
+      if (!fs.existsSync(vfile)) { res.writeHead(404); return res.end(); }
+      res.writeHead(200, { 'Content-Type': 'text/javascript', 'Cache-Control': 'max-age=3600' });
+      return res.end(fs.readFileSync(vfile));
+    }
+
     let rel = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
     const file = path.normalize(path.join(UI_DIR, rel));
     if (!file.startsWith(UI_DIR) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
@@ -213,6 +222,12 @@ async function handleApi(req, url, res) {
         names.some(n => n.endsWith('.pkz')) || names.includes('q2pro.exe') || names.includes('aqtion.exe');
       const parent = path.dirname(abs) === abs ? null : path.dirname(abs);
       return json(res, 200, { path: abs, parent, dirs, looksLikeInstall });
+    }
+
+    case '/api/mapgeo': {
+      const name = q.get('name');
+      if (!name) return json(res, 400, { error: 'missing ?name=' });
+      return json(res, 200, getInstall(dir).mapGeometry(name));
     }
 
     case '/api/textures':

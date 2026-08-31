@@ -3,7 +3,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { GameFS } from './vfs.js';
-import { parseBsp, flagNames } from './bsp.js';
+import { parseBsp, extractBspGeometry, flagNames } from './bsp.js';
 import { decodePcx, decodeImage } from './decoders.js';
 import { encodePng, resizeRgba } from './thumbs.js';
 import { makeThumbPng, resolveImage, TEXTURE_EXTS, TEXTURE_EXTS_LOW } from './thumbs.js';
@@ -59,6 +59,7 @@ export class Install {
     this.fs = new GameFS(root, dirs);
     this.palette = this.#loadPalette();
     this.bspCache = new Map();
+    this.geoCache = new Map();
     this.thumbCache = new Map();
     this.texCatalog = null;
     this.skyCatalog = null;
@@ -236,6 +237,36 @@ export class Install {
   skyThumbPng(skyName, maxDim = 128) {
     return this.thumbPng('env/' + skyName + 'ft', maxDim) ||
       this.thumbPng('env/' + skyName + 'bk', maxDim);
+  }
+
+  // Renderable geometry for the 3D viewer, with UVs normalized against the
+  // engine's mapping dimensions (the .wal size when one exists — hi-res
+  // replacements are scaled to the wal's texel grid).
+  mapGeometry(mapName) {
+    if (this.geoCache.has(mapName)) return this.geoCache.get(mapName);
+    const bspPath = this.#mapPath(mapName);
+    if (!bspPath) throw new Error('map not found: ' + mapName);
+    const raw = extractBspGeometry(this.fs.read(bspPath));
+    const groups = raw.groups.map(g => {
+      let dims = null;
+      const walBuf = this.fs.read('textures/' + g.name + '.wal');
+      if (walBuf) dims = imageSize(walBuf, '.wal');
+      if (!dims) {
+        const hit = resolveImage(this.fs, 'textures/' + g.name);
+        if (hit) dims = imageSize(this.fs.read(hit.path), hit.ext);
+      }
+      const w = dims && dims.w ? dims.w : 64;
+      const h = dims && dims.h ? dims.h : 64;
+      const uvs = new Array(g.uvs.length);
+      for (let i = 0; i < g.uvs.length; i += 2) {
+        uvs[i] = Math.round(g.uvs[i] / w * 10000) / 10000;
+        uvs[i + 1] = Math.round(g.uvs[i + 1] / h * 10000) / 10000;
+      }
+      return { name: g.name, flags: flagNames(g.flags), positions: g.positions, uvs };
+    });
+    const geo = { name: mapName, extended: raw.extended, groups, spawns: raw.spawns, bounds: raw.bounds };
+    this.geoCache.set(mapName, geo);
+    return geo;
   }
 
   // Thumbnail for an uploaded custom image (texswap/custom/*.png).

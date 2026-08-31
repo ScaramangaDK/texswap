@@ -154,3 +154,129 @@ export function flagNames(flags) {
   }
   return out;
 }
+
+// Renderable geometry for the 3D viewer: triangulated faces grouped by
+// texture, texel-space UVs from the texinfo axes, and player spawn points.
+export function extractBspGeometry(buf) {
+  const magic = buf.toString('latin1', 0, 4);
+  const extended = magic === 'QBSP';
+  if (magic !== 'IBSP' && !extended) throw new Error(`not a Quake 2 BSP (magic "${magic}")`);
+
+  const lumps = [];
+  for (let i = 0; i < 19; i++) {
+    lumps.push({ ofs: buf.readUInt32LE(8 + i * 8), len: buf.readUInt32LE(12 + i * 8) });
+  }
+
+  // player spawns from the entities lump
+  const entText = cstr(buf, lumps[LUMP_ENTITIES].ofs, lumps[LUMP_ENTITIES].ofs + lumps[LUMP_ENTITIES].len);
+  const spawns = [];
+  const entRe = /\{([^}]*)\}/g;
+  let em;
+  while ((em = entRe.exec(entText)) !== null) {
+    const props = {};
+    const re = /"([^"]*)"\s*"([^"]*)"/g;
+    let m;
+    while ((m = re.exec(em[1])) !== null) props[m[1].toLowerCase()] = m[2];
+    if (/^info_player_(start|deathmatch)$/.test(props.classname || '') && props.origin) {
+      const [x, y, z] = props.origin.split(/\s+/).map(Number);
+      if ([x, y, z].every(Number.isFinite)) spawns.push([x, y, z, Number(props.angle || 0) || 0]);
+    }
+  }
+
+  const ti = lumps[LUMP_TEXINFO];
+  const texinfos = [];
+  for (let p = ti.ofs; p + 76 <= ti.ofs + ti.len; p += 76) {
+    texinfos.push({
+      u: [buf.readFloatLE(p), buf.readFloatLE(p + 4), buf.readFloatLE(p + 8), buf.readFloatLE(p + 12)],
+      v: [buf.readFloatLE(p + 16), buf.readFloatLE(p + 20), buf.readFloatLE(p + 24), buf.readFloatLE(p + 28)],
+      flags: buf.readUInt32LE(p + 32),
+      name: cstr(buf, p + 40, p + 72).replaceAll('\\', '/').toLowerCase(),
+    });
+  }
+
+  const vl = lumps[LUMP_VERTICES];
+  const numVerts = Math.floor(vl.len / 12);
+  const vert = i => {
+    const p = vl.ofs + i * 12;
+    return [buf.readFloatLE(p), buf.readFloatLE(p + 4), buf.readFloatLE(p + 8)];
+  };
+  const el = lumps[LUMP_EDGES];
+  const edgeStride = extended ? 8 : 4;
+  const numEdges = Math.floor(el.len / edgeStride);
+  const edge = i => {
+    const p = el.ofs + i * edgeStride;
+    return extended
+      ? [buf.readUInt32LE(p), buf.readUInt32LE(p + 4)]
+      : [buf.readUInt16LE(p), buf.readUInt16LE(p + 2)];
+  };
+  const sl = lumps[LUMP_SURFEDGES];
+  const numSurfedges = Math.floor(sl.len / 4);
+  const surfedge = i => buf.readInt32LE(sl.ofs + i * 4);
+
+  const fl = lumps[LUMP_FACES];
+  const faceStride = extended ? 28 : 20;
+  const numFaces = Math.floor(fl.len / faceStride);
+
+  const SKIP_FLAGS = 4 | 128; // SURF_SKY | SURF_NODRAW
+  const SKIP_NAMES = /(^|\/)(clip|hint|skip|trigger|origin|null)$/;
+  const groups = new Map();
+  const bounds = { min: [1e9, 1e9, 1e9], max: [-1e9, -1e9, -1e9] };
+
+  for (let i = 0; i < numFaces; i++) {
+    const p = fl.ofs + i * faceStride;
+    let firstEdge, numFEdges, texinfoIdx;
+    if (extended) {
+      firstEdge = buf.readInt32LE(p + 8);
+      numFEdges = buf.readInt32LE(p + 12);
+      texinfoIdx = buf.readInt32LE(p + 16);
+    } else {
+      firstEdge = buf.readInt32LE(p + 4);
+      numFEdges = buf.readUInt16LE(p + 8);
+      texinfoIdx = buf.readUInt16LE(p + 10);
+    }
+    const info = texinfos[texinfoIdx];
+    if (!info || numFEdges < 3 || numFEdges > 128) continue;
+    if (info.flags & SKIP_FLAGS) continue;
+    if (SKIP_NAMES.test(info.name)) continue;
+
+    const poly = [];
+    let valid = true;
+    for (let e = 0; e < numFEdges; e++) {
+      const seIdx = firstEdge + e;
+      if (seIdx < 0 || seIdx >= numSurfedges) { valid = false; break; }
+      const se = surfedge(seIdx);
+      const ei = Math.abs(se);
+      if (ei >= numEdges) { valid = false; break; }
+      const [a, b] = edge(ei);
+      const vi = se >= 0 ? a : b;
+      if (vi >= numVerts) { valid = false; break; }
+      poly.push(vert(vi));
+    }
+    if (!valid) continue;
+
+    let g = groups.get(info.name);
+    if (!g) {
+      g = { name: info.name, flags: 0, positions: [], uvs: [] };
+      groups.set(info.name, g);
+    }
+    g.flags |= info.flags;
+
+    const pushVert = pt => {
+      g.positions.push(Math.round(pt[0] * 10) / 10, Math.round(pt[1] * 10) / 10, Math.round(pt[2] * 10) / 10);
+      const tu = pt[0] * info.u[0] + pt[1] * info.u[1] + pt[2] * info.u[2] + info.u[3];
+      const tv = pt[0] * info.v[0] + pt[1] * info.v[1] + pt[2] * info.v[2] + info.v[3];
+      g.uvs.push(Math.round(tu * 100) / 100, Math.round(tv * 100) / 100);
+      for (let k = 0; k < 3; k++) {
+        if (pt[k] < bounds.min[k]) bounds.min[k] = pt[k];
+        if (pt[k] > bounds.max[k]) bounds.max[k] = pt[k];
+      }
+    };
+    for (let t = 1; t + 1 < poly.length; t++) {
+      pushVert(poly[0]);
+      pushVert(poly[t]);
+      pushVert(poly[t + 1]);
+    }
+  }
+
+  return { extended, groups: [...groups.values()], spawns, bounds };
+}
