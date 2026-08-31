@@ -206,25 +206,24 @@ header::before {
   background: linear-gradient(90deg, var(--accent), rgba(255, 140, 26, 0) 55%);
 }
 
-.brand { display: flex; align-items: center; gap: 12px; }
-.logomark {
-  width: 40px;
-  height: 40px;
-  border-radius: var(--r-m);
-  box-shadow: var(--shadow-1);
+.sidelogo {
   display: block;
-}
-.emblembtn {
-  height: 40px;
-  width: 40px;
-  padding: 2px;
+  width: 100%;
+  height: auto;
+  padding: 12px 12px 2px;
   background: none;
-  border-color: transparent;
-  margin-left: auto;
+  border: none;
+  cursor: pointer;
 }
-.dirbar { margin-left: 0; }
-.emblembtn img { width: 100%; height: 100%; border-radius: var(--r-s); display: block; }
-.emblembtn:hover { background: none; border-color: var(--accent); }
+.sidelogo img {
+  display: block;
+  width: 100%;
+  border-radius: 16px;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+.sidelogo:hover { background: none; border: none; }
+.sidelogo:hover img { transform: scale(1.015); filter: brightness(1.08); }
+.sidelogo:active { transform: none; }
 h1 { font-size: 16px; font-weight: 650; letter-spacing: 0.01em; }
 .tagline {
   display: block;

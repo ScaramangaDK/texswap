@@ -1459,7 +1459,7 @@ $('aboutBtn').addEventListener('click', () => {
       <button class="mclose">✕</button>
     </div>
     <div class="mbody" style="text-align:center">
-      <img src="logo.png" alt="Ralle's AQ2 Texture Swapper" style="width:min(420px,80%);border-radius:14px;margin:6px 0 14px">
+      <img src="logo2.png" alt="Ralle's AQ2 Texture Swapper" style="width:min(420px,80%);border-radius:14px;margin:6px 0 14px">
       <p style="font-size:15px;font-weight:650">Ralle's AQ2 Texture Swapper</p>
       <p class="mnote" style="margin-top:4px">Restyle any AQ2/AQtion map — swap textures &amp; skyboxes, tune lighting,
       save per-map presets and share them with friends. Powered by q2pro's <span class="mono">link</span> command.</p>
