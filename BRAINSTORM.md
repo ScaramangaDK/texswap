@@ -80,6 +80,7 @@ Stack: **Electron** (Node backend + web UI) → portable .exe (~90 MB), and the 
 - Cross-extension links resolve at FS level, but the image decoder is chosen by the *requested* extension → the app transcodes replacements to matching extensions.
 - `cl_beginmapcmd` + `$cl_mapname` macro exist (client), `r_reload` refreshes textures in-game, `whereis` resolves links (great for debugging).
 - **Hi/low-res texture settings** (from user): `r_override_textures` enables truecolor override of WAL/PCX; `r_texture_overrides` is a bitmask choosing which categories (world textures, skins, HUD, console) use hi-res — user runs 15 (world low-res) and toggles 31 (world hi-res). The app links **all** relevant extensions (existing + canonical .png and .wal) so swaps work in both modes. A per-preset hi/low toggle is planned for V3.
+- **Texture alpha on world surfaces** (in-game test by user, 2026-08-31): a transparent replacement makes the surface invisible **only on trans-flagged surfaces** (SURF_TRANS33/66 — signs, glass, overlays); on opaque surfaces the engine renders the transparent areas **solid black**. The invisible feature now reads the BSP surface flags and tells the user in advance which case applies.
 
 ## Roadmap
 

@@ -611,11 +611,18 @@ function renderCustomTab(t) {
       <button class="primary hidden" id="customApply">Use this image</button>
     </div>
     <div class="sectionhead">Make it invisible</div>
-    <p style="color:var(--dim);font-size:12.5px;margin-bottom:10px">
-      Replaces the texture with a fully transparent image (png/tga) — good for signs, posters, overlays you want gone.
-      <b>Experimental:</b> needs hi-res world textures enabled in game (<span class="mono">r_override_textures 1</span>),
-      and some surfaces may render solid instead of disappearing — try it and see. In low-res (.wal) mode the original stays.</p>
+    ${t.flags.includes('trans33') || t.flags.includes('trans66') ? `
+    <p style="color:#6fdc8f;font-size:12.5px;margin-bottom:10px">
+      ✓ This texture sits on <b>transparent (trans) surfaces</b> — invisible works here.
+      Needs hi-res world textures in game (transparency can't travel through .wal files).</p>
     <button id="invisApply">👻 Make invisible</button>
+    ` : `
+    <p style="color:var(--accent2);font-size:12.5px;margin-bottom:10px">
+      ⚠ This texture is on <b>opaque surfaces</b> — the engine renders transparency as solid <b>black</b> here
+      (alpha only works on trans-flagged surfaces like signs and glass).
+      A flat color or your own image is usually the better tool for this one.</p>
+    <button id="invisApply" class="danger">👻 Make invisible anyway (will look black)</button>
+    `}
   `;
   let picked = null;
   $('customFile').addEventListener('change', e => {
