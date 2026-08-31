@@ -129,8 +129,6 @@ async function handleApi(req, url, res) {
           } else if (body.spec.type === 'flat') {
             try { parseColor(body.spec.color); }
             catch (e) { return json(res, 400, { error: e.message }); }
-          } else if (body.spec.type === 'invisible') {
-            // no extra fields to validate
           } else {
             return json(res, 400, { error: 'unknown swap type' });
           }

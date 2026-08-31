@@ -641,19 +641,6 @@ function renderCustomTab(t) {
       <img id="customPreview" class="flatpreview hidden" alt="preview">
       <button class="primary hidden" id="customApply">Use this image</button>
     </div>
-    <div class="sectionhead">Make it invisible</div>
-    ${t.flags.includes('trans33') || t.flags.includes('trans66') || t.flags.includes('alphatest') ? `
-    <p class="mnote good">
-      ✓ This texture sits on <b>transparent (trans) surfaces</b> — invisible works here.
-      Needs hi-res world textures in game (transparency can't travel through .wal files).</p>
-    <button id="invisApply">👻 Make invisible</button>
-    ` : `
-    <p class="mnote warn">
-      ⚠ This texture is on <b>opaque surfaces</b> — the engine renders transparency as solid <b>black</b> here
-      (alpha only works on trans-flagged surfaces like signs and glass).
-      A flat color or your own image is usually the better tool for this one.</p>
-    <button id="invisApply" class="danger">👻 Make invisible anyway (will look black)</button>
-    `}
   `;
   let picked = null;
   $('customFile').addEventListener('change', e => {
@@ -689,10 +676,6 @@ function renderCustomTab(t) {
     } catch (e) {
       toast('Upload failed: ' + e.message, true);
     }
-  });
-  $('invisApply').addEventListener('click', () => {
-    closeModal();
-    setSwap(t.name, { type: 'invisible' });
   });
 }
 
@@ -1476,8 +1459,7 @@ function openGuide() {
       <div class="sectionhead">3 · Swap textures</div>
       <p>Pick a map, click any texture card. Choose a <b>stock texture</b> (search, filter by
       collection or by map), a <b>flat/pattern color</b> (incl. the ralle_colors palette),
-      <b>your own image</b>, or make it <b>invisible</b> (works on trans/alphatest surfaces —
-      the dialog tells you which). Click the skybox card to change the sky.</p>
+      or <b>your own image</b>. Click the skybox card to change the sky.</p>
 
       <div class="sectionhead">4 · See your changes</div>
       <p>In the game: changes auto-apply on every map load — mid-map, just press <b>F9</b>.

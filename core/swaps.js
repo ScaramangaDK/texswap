@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { flatImage, transparentImage, transcode, encodeAs, encodePngFile } from './gen.js';
+import { flatImage, transcode, encodeAs, encodePngFile } from './gen.js';
 import { decodeImage } from './decoders.js';
 import { resolveImage } from './thumbs.js';
 
@@ -35,6 +35,16 @@ function cleanCvarMap(obj) {
     out[k.toLowerCase()] = val;
   }
   return out;
+}
+
+// A custom image that is nearly all transparent is the removed "invisible"
+// cheat in disguise; legit cutout textures (fences, leaves) keep well under
+// this. Checked on upload and on preset import.
+function mostlyTransparent(img) {
+  const d = img.data;
+  let clear = 0;
+  for (let i = 3; i < d.length; i += 4) if (d[i] < 8) clear++;
+  return clear / (img.width * img.height) > 0.9;
 }
 
 // Per-user data root: presets survive game reinstalls/deletions here.
@@ -89,6 +99,18 @@ export class SwapStore {
             : {},
           maps: raw.maps,
         };
+        // the invisible swap type was removed before release (see-through
+        // surfaces are a cheat risk): drop any stored ones, presets included
+        for (const e of Object.values(this.data.maps)) {
+          if (!e) continue;
+          const sets = [e.swaps, ...Object.values(e.saved || {}).map(p => p && p.swaps)];
+          for (const swaps of sets) {
+            if (!swaps) continue;
+            for (const [k, v] of Object.entries(swaps)) {
+              if (v && v.type === 'invisible') delete swaps[k];
+            }
+          }
+        }
       }
     } catch { /* no presets yet */ }
   }
@@ -109,6 +131,9 @@ export class SwapStore {
       throw new Error('unsupported image type ' + (ext || '(none)') + ' - use png, jpg or tga');
     }
     const img = decodeImage(buf, ext, this.install.palette);
+    if (mostlyTransparent(img)) {
+      throw new Error('image is almost fully transparent - invisible replacements are not allowed (cheat risk)');
+    }
     const master = encodePngFile(img);
     const hash = crypto.createHash('sha1').update(master).digest('hex').slice(0, 8);
     const rel = `custom/${sanitize(from)}-${hash}.png`;
@@ -202,6 +227,9 @@ export class SwapStore {
   }
 
   setSwap(mapName, from, spec) {
+    if (spec && spec.type === 'invisible') {
+      throw new Error('invisible swaps are not supported (see-through surfaces would be cheating)');
+    }
     const e = this.mapEntry(mapName, true);
     if (spec === null) delete e.swaps[from];
     else e.swaps[from] = spec;
@@ -323,7 +351,9 @@ export class SwapStore {
     const swaps = {};
     for (const [from, spec] of Object.entries(obj.swaps)) {
       if (spec && spec.type === 'flat' && typeof spec.color === 'string') swaps[from] = spec;
-      else if (spec && spec.type === 'invisible') swaps[from] = { type: 'invisible' };
+      else if (spec && spec.type === 'invisible') {
+        warnings.push(`invisible swap for ${from} skipped - the invisible feature was removed (cheat risk)`);
+      }
       else if (spec && spec.type === 'stock' && typeof spec.to === 'string') {
         if (!this.install.fs.findFirst('textures/' + spec.to, ALL_TEX_EXTS.concat('.pcx'))) {
           warnings.push(`replacement "${spec.to}" not found here - skipped for ${from}`);
@@ -336,9 +366,19 @@ export class SwapStore {
           warnings.push(`custom image for ${from} missing from the file - skipped`);
           continue;
         }
+        const buf = Buffer.from(b64, 'base64');
+        try {
+          if (mostlyTransparent(decodeImage(buf, '.png', this.install.palette))) {
+            warnings.push(`custom image for ${from} is almost fully transparent - skipped (cheat risk)`);
+            continue;
+          }
+        } catch {
+          warnings.push(`custom image for ${from} is not a readable png - skipped`);
+          continue;
+        }
         const abs = path.join(this.dataDir, spec.file);
         fs.mkdirSync(path.dirname(abs), { recursive: true });
-        fs.writeFileSync(abs, Buffer.from(b64, 'base64'));
+        fs.writeFileSync(abs, buf);
         swaps[from] = spec;
       }
     }
@@ -386,11 +426,6 @@ export class SwapStore {
     } else if (spec.type === 'stock') {
       fileBase = sanitize(spec.to);
       make = () => transcode(this.install.fs, this.install.palette, 'textures/' + spec.to, ext, fileBase);
-    } else if (spec.type === 'invisible') {
-      // transparency needs an alpha channel: png/tga only, silently skip the rest
-      if (ext !== '.png' && ext !== '.tga') return null;
-      fileBase = 'invisible';
-      make = () => encodeAs(ext, transparentImage(), this.install.palette, fileBase);
     } else if (spec.type === 'custom') {
       fileBase = 'custom-' + path.basename(spec.file, '.png');
       make = () => {
@@ -431,9 +466,7 @@ export class SwapStore {
 
       if (entry) {
         for (const [from, spec] of Object.entries(entry.swaps)) {
-          let exts = this.#fromExts(from);
-          // invisible works only through alpha-capable formats; always cover .tga too
-          if (spec.type === 'invisible') exts = [...new Set([...exts, '.tga'])];
+          const exts = this.#fromExts(from);
           for (const ext of exts) {
             const target = this.#ensureGen(spec, ext, warnings);
             if (target) {

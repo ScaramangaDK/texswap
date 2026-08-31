@@ -86,7 +86,8 @@ Stack: **Electron** (Node backend + web UI) â†’ portable .exe (~90 MB), and
 - Cross-extension links resolve at FS level, but the image decoder is chosen by the *requested* extension â†’ the app transcodes replacements to matching extensions.
 - `cl_beginmapcmd` + `$cl_mapname` macro exist (client), `r_reload` refreshes textures in-game, `whereis` resolves links (great for debugging).
 - **Hi/low-res texture settings** (from user): `r_override_textures` enables truecolor override of WAL/PCX; `r_texture_overrides` is a bitmask choosing which categories (world textures, skins, HUD, console) use hi-res â€” user runs 15 (world low-res) and toggles 31 (world hi-res). The app links **all** relevant extensions (existing + canonical .png and .wal) so swaps work in both modes. A per-preset hi/low toggle is planned for V3.
-- **Texture alpha on world surfaces** (in-game test by user, 2026-08-31): a transparent replacement makes the surface invisible **only on trans-flagged surfaces** (SURF_TRANS33/66 â€” signs, glass, overlays); on opaque surfaces the engine renders the transparent areas **solid black**. The invisible feature now reads the BSP surface flags and tells the user in advance which case applies.
+- **Texture alpha on world surfaces** (in-game test by user, 2026-08-31): a transparent replacement makes the surface invisible **only on trans-flagged surfaces** (SURF_TRANS33/66 â€” signs, glass, overlays); on opaque surfaces the engine renders the transparent areas **solid black**.
+- **Invisible feature REMOVED before v1.0 release** (user decision, 2026-08-31): see-through fences/grates are a cheat in a competitive shooter. Removed the UI option, the server rejects `type: invisible` (set + import), stored invisible swaps/presets are purged on load, and custom uploads / imported custom images that are >90% fully transparent are rejected as the same cheat in disguise. Legit cutout textures (fences, leaves) stay well under the threshold.
 
 ## Roadmap
 
