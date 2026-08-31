@@ -385,63 +385,12 @@ export function extractBspGeometry(buf) {
     }
   }
 
-  // coplanar same-texture partial overlaps (lapped overlay brushes): when two
-  // faces share plane+texture and genuinely overlap in area, drop the one with
-  // a garbage-dark bake. Touching neighbors don't count as overlap, and mid-lit
-  // faces are never dropped, so real shadows survive.
-  const planeGroups = new Map();
-  for (const f of dedupedFaces) {
-    const P = f.poly;
-    let nx = 0, ny = 0, nz = 0;
-    for (let i = 0; i < P.length; i++) {
-      const a = P[i].pt, b = P[(i + 1) % P.length].pt;
-      nx += (a[1] - b[1]) * (a[2] + b[2]);
-      ny += (a[2] - b[2]) * (a[0] + b[0]);
-      nz += (a[0] - b[0]) * (a[1] + b[1]);
-    }
-    const len = Math.hypot(nx, ny, nz) || 1;
-    nx /= len; ny /= len; nz /= len;
-    const d = nx * P[0].pt[0] + ny * P[0].pt[1] + nz * P[0].pt[2];
-    const key = `${f.name}|${nx.toFixed(2)},${ny.toFixed(2)},${nz.toFixed(2)}|${Math.round(d)}`;
-    let arr = planeGroups.get(key);
-    if (!arr) { arr = []; planeGroups.set(key, arr); }
-    arr.push(f);
-  }
-  const dropped = new Set();
-  for (const arr of planeGroups.values()) {
-    if (arr.length < 2) continue;
-    for (const f of arr) {
-      const bb = { min: [1e9, 1e9, 1e9], max: [-1e9, -1e9, -1e9] };
-      for (const v of f.poly) {
-        for (let k = 0; k < 3; k++) {
-          if (v.pt[k] < bb.min[k]) bb.min[k] = v.pt[k];
-          if (v.pt[k] > bb.max[k]) bb.max[k] = v.pt[k];
-        }
-      }
-      f._bb = bb;
-      f._score = f.lm ? (f.lmAvg || 0) : 150;
-    }
-    for (let i = 0; i < arr.length; i++) {
-      for (let j = i + 1; j < arr.length; j++) {
-        const A = arr[i], B = arr[j];
-        const depths = [0, 1, 2].map(k =>
-          Math.min(A._bb.max[k], B._bb.max[k]) - Math.max(A._bb.min[k], B._bb.min[k]));
-        if (depths.some(dd => dd < 0)) continue;
-        depths.sort((a, b) => b - a);
-        if (depths[0] < 4 || depths[1] < 4) continue; // touching, not overlapping
-        const [dark, bright] = A._score < B._score ? [A, B] : [B, A];
-        if (dark._score < 60 && dark._score < bright._score * 0.35) dropped.add(dark);
-      }
-    }
-  }
-  const finalFaces = dedupedFaces.filter(f => !dropped.has(f));
-
   // pass 3: triangulate into groups keyed by texture + surface type, so the
   // same texture used as plain wall AND masked overlay gets separate materials
   const groups = new Map();
   const whiteU = 2 / ATLAS_W, whiteV = 2 / atlasH;
   const greyU = 8 / ATLAS_W, greyV = 2 / atlasH;
-  for (const f of finalFaces) {
+  for (const f of dedupedFaces) {
     const key = f.name + '|' + (f.flags & MASKED_BITS);
     let g = groups.get(key);
     if (!g) {
