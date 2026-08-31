@@ -173,6 +173,7 @@ export class Install {
       lightingManaged: this.swaps.lightingConfig().manage,
       recentFlats: this.swaps.recentFlats(),
       favTextures: this.swaps.favTextures(),
+      favSets: this.swaps.favSets(),
       extended: parsed.extended,
       warnings: parsed.warnings,
       hasPalette: Boolean(this.palette),

@@ -94,6 +94,15 @@ async function handleApi(req, url, res) {
         const favTextures = inst.swaps.setFavTexture(body.name, Boolean(body.fav));
         return json(res, 200, { ok: true, favTextures });
       }
+      case '/api/favset': {
+        if (!body.action || !body.set) return json(res, 400, { error: 'need action and set' });
+        try {
+          const r = inst.swaps.modifyFavSet(body.action, body.set, body.name);
+          return json(res, 200, { ok: true, ...r });
+        } catch (e) {
+          return json(res, 400, { error: e.message });
+        }
+      }
       case '/api/swap': {
         if (!body.map || !body.from) return json(res, 400, { error: 'need map and from' });
         if (body.spec) {

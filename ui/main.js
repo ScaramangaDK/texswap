@@ -670,22 +670,49 @@ async function renderStockTab(t) {
   body.innerHTML = `
     <div class="mtools">
       <input id="pickSearch" type="search" placeholder="Search textures…">
-      <label class="check"><input id="favOnly" type="checkbox"> ★ favorites only</label>
+      <select id="viewSel"></select>
+      <button id="delSetBtn" class="danger hidden">🗑 delete collection</button>
       <span class="count" id="pickCount"></span>
     </div>
     <div class="pickgrid" id="pickGrid"></div>
   `;
   const catalog = await ensureCatalog();
   const search = $('pickSearch');
-  const favOnly = $('favOnly');
+  const viewSel = $('viewSel');
   const favs = new Set((state.detail && state.detail.favTextures) || []);
+  let sets = { ...((state.detail && state.detail.favSets) || {}) };
+  let view = localStorage.getItem('aq2ts.stockview') || 'all';
+
+  const rebuildViewSel = () => {
+    if (view.startsWith('set:') && !sets[view.slice(4)]) view = 'all';
+    viewSel.innerHTML = '';
+    const opts = [
+      ['all', 'All textures'],
+      ['favs', `★ All favorites (${favs.size})`],
+      ...Object.keys(sets).sort().map(s => [`set:${s}`, `📂 ${s} (${sets[s].length})`]),
+    ];
+    for (const [v, label] of opts) {
+      const o = document.createElement('option');
+      o.value = v;
+      o.textContent = label;
+      if (v === view) o.selected = true;
+      viewSel.appendChild(o);
+    }
+  };
+
   const render = () => {
+    closeSetPopup();
+    rebuildViewSel();
+    $('delSetBtn').classList.toggle('hidden', !view.startsWith('set:'));
     const q = search.value.trim().toLowerCase();
     const grid = $('pickGrid');
     grid.textContent = '';
     let matches = catalog.filter(c => c.name !== t.name && (!q || c.name.includes(q)));
-    if (favOnly.checked) matches = matches.filter(c => favs.has(c.name));
-    // favorites float to the top
+    if (view === 'favs') matches = matches.filter(c => favs.has(c.name));
+    else if (view.startsWith('set:')) {
+      const members = new Set(sets[view.slice(4)] || []);
+      matches = matches.filter(c => members.has(c.name));
+    }
     matches = [...matches].sort((a, b) =>
       (favs.has(b.name) - favs.has(a.name)) || a.name.localeCompare(b.name));
     for (const c of matches.slice(0, 240)) {
@@ -712,10 +739,17 @@ async function renderStockTab(t) {
           if (state.detail) state.detail.favTextures = r.favTextures;
           star.textContent = nowFav ? '★' : '☆';
           star.classList.toggle('fav', nowFav);
-          star.title = nowFav ? 'Remove from favorites' : 'Mark as favorite';
         } catch (e) { toast('Favorite failed: ' + e.message, true); }
       });
-      cell.append(img, star, label);
+      const plus = document.createElement('button');
+      plus.className = 'favbtn plusbtn';
+      plus.textContent = '＋';
+      plus.title = 'Add to / remove from collections';
+      plus.addEventListener('click', ev => {
+        ev.stopPropagation();
+        openSetPopup(plus, c.name);
+      });
+      cell.append(img, star, plus, label);
       cell.addEventListener('click', () => {
         closeModal();
         setSwap(t.name, { type: 'stock', to: c.name });
@@ -726,8 +760,99 @@ async function renderStockTab(t) {
       ? `showing 240 of ${matches.length} — refine search`
       : `${matches.length} textures`;
   };
+
+  // small anchored popup for collection membership
+  const closeSetPopup = () => {
+    const p = document.getElementById('setPop');
+    if (p) p.remove();
+    document.removeEventListener('mousedown', onOutside);
+  };
+  const onOutside = e => {
+    const p = document.getElementById('setPop');
+    if (p && !p.contains(e.target)) { closeSetPopup(); render(); }
+  };
+  const setCall = async (action, setName, texName) => {
+    const r = await apiPost('/api/favset', { action, set: setName, name: texName });
+    sets = r.favSets;
+    favs.clear();
+    for (const f of r.favTextures) favs.add(f);
+    if (state.detail) { state.detail.favSets = r.favSets; state.detail.favTextures = r.favTextures; }
+    return r;
+  };
+  const openSetPopup = (anchor, texName) => {
+    closeSetPopup();
+    const pop = document.createElement('div');
+    pop.id = 'setPop';
+    pop.className = 'setpop';
+    const rect = anchor.getBoundingClientRect();
+    pop.style.left = Math.min(rect.left, window.innerWidth - 240) + 'px';
+    pop.style.top = (rect.bottom + 4) + 'px';
+    const title = document.createElement('div');
+    title.className = 'sptitle';
+    title.textContent = texName;
+    pop.appendChild(title);
+    for (const s of Object.keys(sets).sort()) {
+      const row = document.createElement('label');
+      row.className = 'sprow';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = (sets[s] || []).includes(texName);
+      cb.addEventListener('change', async () => {
+        try { await setCall(cb.checked ? 'add' : 'remove', s, texName); }
+        catch (e) { toast(e.message, true); cb.checked = !cb.checked; }
+      });
+      row.append(cb, document.createTextNode(' ' + s));
+      pop.appendChild(row);
+    }
+    if (!Object.keys(sets).length) {
+      const none = document.createElement('div');
+      none.className = 'sphint';
+      none.textContent = 'No collections yet — create one:';
+      pop.appendChild(none);
+    }
+    const newRow = document.createElement('div');
+    newRow.className = 'spnew';
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.maxLength = 30;
+    inp.placeholder = 'new collection…';
+    const btn = document.createElement('button');
+    btn.textContent = 'Add';
+    const createAndAdd = async () => {
+      const name = inp.value.trim();
+      if (!name) return;
+      try {
+        await setCall('add', name, texName);
+        toast(`Added to new collection "${name}"`);
+        closeSetPopup();
+        render();
+      } catch (e) { toast(e.message, true); }
+    };
+    btn.addEventListener('click', createAndAdd);
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') createAndAdd(); });
+    newRow.append(inp, btn);
+    pop.appendChild(newRow);
+    document.body.appendChild(pop);
+    setTimeout(() => document.addEventListener('mousedown', onOutside), 0);
+  };
+
+  $('delSetBtn').addEventListener('click', async () => {
+    const name = view.slice(4);
+    if (!confirm(`Delete collection "${name}"? (textures stay in All favorites)`)) return;
+    try {
+      await setCall('deleteSet', name, null);
+      view = 'all';
+      localStorage.setItem('aq2ts.stockview', view);
+      render();
+      toast(`Collection "${name}" deleted`);
+    } catch (e) { toast(e.message, true); }
+  });
+  viewSel.addEventListener('change', () => {
+    view = viewSel.value;
+    localStorage.setItem('aq2ts.stockview', view);
+    render();
+  });
   search.addEventListener('input', render);
-  favOnly.addEventListener('change', render);
   search.focus();
   render();
 }

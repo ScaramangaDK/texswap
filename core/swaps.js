@@ -42,7 +42,7 @@ export class SwapStore {
     this.install = install;
     this.dir = path.join(install.writeDir, 'texswap');
     this.file = path.join(this.dir, 'presets.json');
-    this.data = { version: 2, enabled: true, lighting: { manage: false, global: {}, extra: '' }, recentFlats: [], favTextures: [], maps: {} };
+    this.data = { version: 2, enabled: true, lighting: { manage: false, global: {}, extra: '' }, recentFlats: [], favTextures: [], favSets: {}, maps: {} };
     try {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
       if (raw && raw.maps) {
@@ -56,6 +56,11 @@ export class SwapStore {
           },
           recentFlats: Array.isArray(raw.recentFlats) ? raw.recentFlats.slice(0, 12) : [],
           favTextures: Array.isArray(raw.favTextures) ? raw.favTextures : [],
+          favSets: (raw.favSets && typeof raw.favSets === 'object' && !Array.isArray(raw.favSets))
+            ? Object.fromEntries(Object.entries(raw.favSets)
+                .filter(([, v]) => Array.isArray(v))
+                .map(([k, v]) => [k, v.filter(x => typeof x === 'string')]))
+            : {},
           maps: raw.maps,
         };
       }
@@ -92,9 +97,41 @@ export class SwapStore {
     if (fav) set.add(name);
     else set.delete(name);
     this.data.favTextures = [...set].sort();
+    this.#saveJson();
+    return this.data.favTextures;
+  }
+
+  favSets() {
+    return this.data.favSets || {};
+  }
+
+  // action: 'add' | 'remove' (texture in set) | 'create' | 'deleteSet'
+  modifyFavSet(action, setName, texName) {
+    const sets = this.data.favSets || (this.data.favSets = {});
+    if (action === 'deleteSet') {
+      delete sets[setName];
+    } else {
+      const clean = String(setName || '').trim().replace(/[^a-z0-9 _.,'&()-]/gi, '').slice(0, 30);
+      if (!clean) throw new Error('invalid collection name');
+      const arr = sets[clean] || (sets[clean] = []);
+      if (action === 'add' && texName) {
+        if (!arr.includes(texName)) arr.push(texName);
+        arr.sort();
+        // collections are subsets of "All favorites"
+        const favs = new Set(this.data.favTextures || []);
+        favs.add(texName);
+        this.data.favTextures = [...favs].sort();
+      } else if (action === 'remove' && texName) {
+        sets[clean] = arr.filter(t => t !== texName);
+      }
+    }
+    this.#saveJson();
+    return { favSets: this.data.favSets, favTextures: this.data.favTextures };
+  }
+
+  #saveJson() {
     fs.mkdirSync(this.dir, { recursive: true });
     fs.writeFileSync(this.file, JSON.stringify(this.data, null, 2));
-    return this.data.favTextures;
   }
 
   lightingConfig() {
