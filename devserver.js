@@ -179,6 +179,14 @@ async function handleApi(req, url, res) {
   }
 }
 
+server.on('error', e => {
+  if (e.code === 'EADDRINUSE') {
+    console.log(`AQ2 Texture Swapper is already running - just open http://127.0.0.1:${PORT}`);
+    process.exit(0);
+  }
+  throw e;
+});
+
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`AQ2 Texture Swapper dev server on http://127.0.0.1:${PORT}`);
   console.log(`Default install: ${DEFAULT_DIR}`);
