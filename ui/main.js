@@ -717,6 +717,13 @@ async function buildTextureBrowser(body, opts = {}) {
       <input id="mapFilter" class="mapfilter" type="search" list="mapNamesData"
         placeholder="on map… (name or title)" title="Show only textures used by one map — type its name or title">
       <select id="viewSel"></select>
+      <select id="colsSel" title="Preview size — textures per row">
+        <option value="auto">size: auto</option>
+        <option value="4">big — 4 per row</option>
+        <option value="5">large — 5 per row</option>
+        <option value="6">medium — 6 per row</option>
+        <option value="8">small — 8 per row</option>
+      </select>
       <button id="delSetBtn" class="danger hidden">🗑 delete collection</button>
       <span class="count" id="pickCount"></span>
     </div>
@@ -729,6 +736,15 @@ async function buildTextureBrowser(body, opts = {}) {
   const mapInput = $('mapFilter');
   let mapSet = null;
   let mapFilterName = '';
+
+  const colsSel = $('colsSel');
+  colsSel.value = localStorage.getItem('aq2ts.gridcols') || 'auto';
+  if (colsSel.selectedIndex < 0) colsSel.value = 'auto';
+  const applyCols = () => {
+    $('pickGrid').style.gridTemplateColumns =
+      colsSel.value === 'auto' ? '' : `repeat(${colsSel.value}, 1fr)`;
+  };
+  const thumbSizeForCols = () => ({ 4: 192, 5: 160, 6: 128, 8: 96 }[colsSel.value] || 96);
   const src = state.scan || state.detail || {};
   const favs = new Set(src.favTextures || []);
   let sets = { ...(src.favSets || {}) };
@@ -772,7 +788,7 @@ async function buildTextureBrowser(body, opts = {}) {
       cell.className = 'pickcell' + (opts.currentTo === c.name ? ' current' : '');
       const img = document.createElement('img');
       img.loading = 'lazy';
-      img.src = thumbUrl({ tex: c.name, size: 96 });
+      img.src = thumbUrl({ tex: c.name, size: thumbSizeForCols() });
       img.addEventListener('error', () => { img.style.visibility = 'hidden'; });
       const label = document.createElement('div');
       label.className = 'pname';
@@ -839,6 +855,12 @@ async function buildTextureBrowser(body, opts = {}) {
   };
   mapInput.addEventListener('input', applyMapFilter);
   mapInput.addEventListener('change', applyMapFilter);
+  colsSel.addEventListener('change', () => {
+    localStorage.setItem('aq2ts.gridcols', colsSel.value);
+    applyCols();
+    render();
+  });
+  applyCols();
 
   // small anchored popup for collection membership
   const closeSetPopup = () => {
