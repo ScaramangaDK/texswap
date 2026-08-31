@@ -60,9 +60,11 @@ function applyGroupLook(mesh, detail) {
 // quarter-turns (q) and mirroring (mx) because three samples cube faces in
 // the GL convention while Q2 faces are straight photos; calibrated against
 // cloud-seam continuity (see AQVskyRot for live tuning).
+// derived from id's st_to_vec tables vs GL cube sampling: sides mirror,
+// the caps also rotate (up transposes, dn anti-transposes)
 const SKY_XFORM = {
   rt: { q: 0, mx: true }, lf: { q: 0, mx: true },
-  up: { q: 0, mx: true }, dn: { q: 0, mx: true },
+  up: { q: 1, mx: true }, dn: { q: 3, mx: true },
   ft: { q: 0, mx: true }, bk: { q: 0, mx: true },
 };
 
