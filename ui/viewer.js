@@ -148,6 +148,7 @@ async function open(detail) {
     const alphatest = g.flags.includes('alphatest');
     const trans = !alphatest && (g.flags.includes('trans33') || g.flags.includes('trans66'));
     const opacity = trans ? (g.flags.includes('trans33') ? 0.45 : 0.75) : 1;
+    const overlay = alphatest || trans;
     const common = {
       side: THREE.DoubleSide,
       transparent: trans,
@@ -155,6 +156,11 @@ async function open(detail) {
       // alphatest surfaces: opaque where texels exist, hard holes elsewhere;
       // blended trans surfaces still cut their palette-255 holes
       alphaTest: alphatest ? 0.5 : trans ? 0.05 : 0,
+      // overlays are usually coplanar with the wall behind - offset to stop z-fighting
+      polygonOffset: overlay,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+      depthWrite: !trans,
     };
     const mat = lightMap
       ? new THREE.MeshBasicMaterial({ ...common, lightMap, lightMapIntensity: lmIntensity })

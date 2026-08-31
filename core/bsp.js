@@ -268,9 +268,12 @@ export function extractBspGeometry(buf) {
     }
     if (!valid) continue;
 
-    // lightmap block (style-0) dims from texel extents, 16 texels per luxel
+    // lightmap block (style-0) dims from texel extents, 16 texels per luxel.
+    // warp/trans/alphatest surfaces render unlit in the engine's alpha pass —
+    // their baked lightmaps are often black (compiler saw them as inside walls)
+    const UNLIT = SURF_WARP | 16 | 32 | 33554432;
     let lm = null;
-    if (lightofs >= 0 && ll.len > 0 && !(info.flags & SURF_WARP)) {
+    if (lightofs >= 0 && ll.len > 0 && !(info.flags & UNLIT)) {
       let umin = Infinity, umax = -Infinity, vmin = Infinity, vmax = -Infinity;
       for (const v of poly) {
         if (v.tu < umin) umin = v.tu;
