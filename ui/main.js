@@ -1432,7 +1432,7 @@ function openGuide() {
   const root = state.scan ? state.scan.root : '(no install scanned yet)';
   openModal(`
     <div class="mhead">
-      <h3>📖 How to use Ralle's AQ2 Texture Swapper</h3>
+      <h3>📄 Readme — setup &amp; how to use</h3>
       <button class="mclose">✕</button>
     </div>
     <div class="mbody helpbody">
