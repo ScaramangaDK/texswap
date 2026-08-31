@@ -75,6 +75,8 @@ Stack: **Electron** (Node backend + web UI) → portable .exe (~90 MB), and the 
 
 - **2026-08-31 — Favorite collections** (user request, aimed at mapmakers): named texture sets ("great bricks", "Makkons best metal", …) on top of the ★ All-favorites list. Any texture joins any number of collections via a ＋ popup in the picker; a dropdown filters the picker to a collection; adding to a collection auto-stars (All favorites stays the superset); collections deletable. Future synergy: include collections in team-pack sharing.
 
+- **2026-08-31 — UI design-system overhaul** (user request, done overnight): stylesheet rewritten as one coherent system — token set (4 layered surfaces, one orange accent + semantic good/bad/info, 6/10/14 radii, 2 shadows), exactly two typefaces (Segoe UI Variable + Cascadia Mono/Consolas), uppercase micro-labels, unified 32px controls & button variants (base/primary/danger/small), brand stripe + gradient logo, refined cards (hover lift, swap rings), chip rail for presets, underline tabs, consistent modal chrome with animations, styled scrollbars, toast slide-ins, glass viewer bars. All class names/IDs preserved — zero behavior changes.
+
 ## Verified engine facts (tested against AQtion q2proded + source, 2026-08-31)
 
 - **`softlink` is fallback-only** — it fires only when the requested file does not exist. **`link` (hard) expands before the file search and overrides existing files → the app uses `link`.** Same syntax; `unlink --all` clears only hard links (AQtion's shipped soft links live in a separate list — clean namespace separation).

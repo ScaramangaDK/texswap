@@ -612,7 +612,7 @@ function renderCustomTab(t) {
   const body = $('mbody');
   const orig = t.missing ? 'unknown size' : `${t.w}×${t.h} ${t.ext.slice(1)}`;
   body.innerHTML = `
-    <p style="color:var(--dim);margin-bottom:12px">Replace <span class="mono" style="color:var(--accent2)">${t.name}</span>
+    <p class="mnote">Replace <span class="mono" style="color:var(--accent2)">${t.name}</span>
       (original: ${orig}) with your own image — png, jpg or tga.
       Matching the original's aspect ratio keeps it looking right on the walls.</p>
     <div class="flatrow">
@@ -622,12 +622,12 @@ function renderCustomTab(t) {
     </div>
     <div class="sectionhead">Make it invisible</div>
     ${t.flags.includes('trans33') || t.flags.includes('trans66') || t.flags.includes('alphatest') ? `
-    <p style="color:#6fdc8f;font-size:12.5px;margin-bottom:10px">
+    <p class="mnote good">
       ✓ This texture sits on <b>transparent (trans) surfaces</b> — invisible works here.
       Needs hi-res world textures in game (transparency can't travel through .wal files).</p>
     <button id="invisApply">👻 Make invisible</button>
     ` : `
-    <p style="color:var(--accent2);font-size:12.5px;margin-bottom:10px">
+    <p class="mnote warn">
       ⚠ This texture is on <b>opaque surfaces</b> — the engine renders transparency as solid <b>black</b> here
       (alpha only works on trans-flagged surfaces like signs and glass).
       A flat color or your own image is usually the better tool for this one.</p>
@@ -1015,7 +1015,7 @@ async function renderFlatTab(t) {
   let updateRalleHint = () => {};
   const body = $('mbody');
   body.innerHTML = `
-    <p style="color:var(--dim);margin-bottom:12px">Replace with a generated flat texture — great for visibility. Patterns add subtle lines so you can still judge distance and speed.</p>
+    <p class="mnote">Replace with a generated flat texture — great for visibility. Patterns add subtle lines so you can still judge distance and speed.</p>
     <div class="stylerow" id="styleRow"></div>
     <div class="swatches" id="swatches"></div>
     <div class="flatrow">
@@ -1099,7 +1099,7 @@ async function renderFlatTab(t) {
     head.className = 'sectionhead';
     head.textContent = `Quake palette — ralle_colors (${ralle.length})`;
     const ralleHint = document.createElement('p');
-    ralleHint.style.cssText = 'color:var(--dim);font-size:12px;margin-bottom:10px';
+    ralleHint.className = 'mnote';
     updateRalleHint = () => {
       ralleHint.textContent = style === 'solid'
         ? 'Click a color to use it as-is (the original .wal file).'
