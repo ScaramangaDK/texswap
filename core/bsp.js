@@ -180,6 +180,7 @@ export function extractBspGeometry(buf) {
   const entText = cstr(buf, lumps[LUMP_ENTITIES].ofs, lumps[LUMP_ENTITIES].ofs + lumps[LUMP_ENTITIES].len);
   const spawns = [];
   const hiddenFaces = new Set();
+  const faceOrigin = new Map();
   const entRe = /\{([^}]*)\}/g;
   let em;
   while ((em = entRe.exec(entText)) !== null) {
@@ -193,10 +194,17 @@ export function extractBspGeometry(buf) {
       if ([x, y, z].every(Number.isFinite)) spawns.push([x, y, z, Number(props.angle || 0) || 0]);
     }
     const mm = /^\*(\d+)$/.exec(props.model || '');
-    if (mm && (cls.startsWith('trigger_') || cls === 'func_areaportal')) {
+    if (mm) {
       const model = models[Number(mm[1])];
-      if (model) {
+      if (model && (cls.startsWith('trigger_') || cls === 'func_areaportal')) {
         for (let f = model.firstface; f < model.firstface + model.numfaces; f++) hiddenFaces.add(f);
+      } else if (model && props.origin) {
+        // rotating brush entities (doors, the croc jaw...) are compiled
+        // centered on their pivot; the engine translates them by origin
+        const o = props.origin.split(/\s+/).map(Number);
+        if (o.length === 3 && o.every(Number.isFinite) && (o[0] || o[1] || o[2])) {
+          for (let f = model.firstface; f < model.firstface + model.numfaces; f++) faceOrigin.set(f, o);
+        }
       }
     }
   }
@@ -289,9 +297,12 @@ export function extractBspGeometry(buf) {
       const [a, b] = edge(ei);
       const vi = se >= 0 ? a : b;
       if (vi >= numVerts) { valid = false; break; }
-      const pt = vert(vi);
-      const tu = pt[0] * info.u[0] + pt[1] * info.u[1] + pt[2] * info.u[2] + info.u[3];
-      const tv = pt[0] * info.v[0] + pt[1] * info.v[1] + pt[2] * info.v[2] + info.v[3];
+      const raw = vert(vi);
+      // UVs and lightmaps are baked in compiled (untranslated) coords
+      const tu = raw[0] * info.u[0] + raw[1] * info.u[1] + raw[2] * info.u[2] + info.u[3];
+      const tv = raw[0] * info.v[0] + raw[1] * info.v[1] + raw[2] * info.v[2] + info.v[3];
+      const org = faceOrigin.get(i);
+      const pt = org ? [raw[0] + org[0], raw[1] + org[1], raw[2] + org[2]] : raw;
       poly.push({ pt, tu, tv });
       for (let k = 0; k < 3; k++) {
         if (pt[k] < bounds.min[k]) bounds.min[k] = pt[k];

@@ -273,7 +273,7 @@ export class Install {
         uvs[i] = Math.round(g.uvs[i] / w * 10000) / 10000;
         uvs[i + 1] = Math.round(g.uvs[i + 1] / h * 10000) / 10000;
       }
-      return { name: g.name, flags: flagNames(g.flags), positions: g.positions, uvs, luvs: g.luvs };
+      return { name: g.name, flags: flagNames(g.flags), positions: g.positions, uvs, luvs: g.luvs, texW: w, texH: h };
     });
     // lightmap atlas: RGB -> RGBA -> PNG, served via /api/maplight
     let atlasPng = null;

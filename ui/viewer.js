@@ -106,6 +106,11 @@ async function open(detail) {
   // overbright and gamma on top of gl_modulate, so this is a taste control)
   const saved = parseFloat(localStorage.getItem('aq2ts.vbright'));
   const lmIntensity = Number.isFinite(saved) && saved >= 0.5 && saved <= 12 ? saved : 3;
+  // additive base brightness like the engine's gl_brightness (default ~0.1):
+  // lifts pitch-black bakes so texture detail stays visible in dark rooms
+  const Lg = AQTS.state.scan && AQTS.state.scan.lighting;
+  const gb = Lg && Lg.manage && Lg.global && Lg.global.gl_brightness ? parseFloat(Lg.global.gl_brightness) : 0.1;
+  const brightUniform = { value: Math.min(1, Math.max(0, (isNaN(gb) ? 0.1 : gb) * 2.5)) };
   const brightInput = document.getElementById('vBright');
   brightInput.value = lmIntensity;
   brightInput.oninput = () => {
@@ -169,22 +174,35 @@ async function open(detail) {
     const mat = lightMap
       ? new THREE.MeshBasicMaterial({ ...common, lightMap, lightMapIntensity: lmIntensity })
       : new THREE.MeshLambertMaterial(common);
-    // classic q2 surface animation: warp undulation and flowing scroll
-    const warp = g.flags.includes('warp');
-    const flowing = g.flags.includes('flowing');
-    if (warp || flowing) {
+    if (lightMap) {
+      // one shader patch: additive gl_brightness for everything, plus classic
+      // q2 warp undulation and engine-rate flowing scroll (64 texels/sec, -U)
+      const warp = g.flags.includes('warp');
+      const flow = g.flags.includes('flowing') ? 64 / (g.texW || 64) : 0;
       mat.onBeforeCompile = shader => {
         shader.uniforms.uTime = ctx.timeUniform;
-        shader.fragmentShader = 'uniform float uTime;\n' + shader.fragmentShader.replace(
-          '#include <map_fragment>',
-          `#ifdef USE_MAP
-            vec2 aqUv = vMapUv;
-            ${warp ? 'aqUv += 0.05 * sin(vMapUv.yx * 9.0 + uTime * 1.7);' : ''}
-            ${flowing ? 'aqUv.x -= uTime * 0.12;' : ''}
-            vec4 sampledDiffuseColor = texture2D( map, aqUv );
-            diffuseColor *= sampledDiffuseColor;
+        shader.uniforms.uBright = brightUniform;
+        shader.fragmentShader = 'uniform float uTime;\nuniform float uBright;\n' + shader.fragmentShader.replace(
+          '#include <lightmap_fragment>',
+          `#ifdef USE_LIGHTMAP
+            vec4 lightMapTexel = texture2D( lightMap, vLightMapUv );
+            reflectedLight.indirectDiffuse += lightMapTexel.rgb * lightMapIntensity * RECIPROCAL_PI + vec3( uBright );
+          #else
+            reflectedLight.indirectDiffuse += vec3( 1.0 );
           #endif`,
         );
+        if (warp || flow) {
+          shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <map_fragment>',
+            `#ifdef USE_MAP
+              vec2 aqUv = vMapUv;
+              ${warp ? 'aqUv += 0.045 * sin(vMapUv.yx * 8.0 + uTime * 0.9);' : ''}
+              ${flow ? `aqUv.x -= uTime * ${flow.toFixed(5)};` : ''}
+              vec4 sampledDiffuseColor = texture2D( map, aqUv );
+              diffuseColor *= sampledDiffuseColor;
+            #endif`,
+          );
+        }
       };
     }
     const mesh = new THREE.Mesh(bg, mat);
