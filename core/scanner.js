@@ -259,11 +259,13 @@ export class Install {
       this.thumbPng('env/' + skyName + 'bk', maxDim);
   }
 
-  // Neutral blue grid served in place of textures the install doesn't have.
+  // Served in place of textures the install doesn't have: ralle_colors/cyan2
+  // base (#001f2b, hardcoded so it also renders on installs without the pack)
+  // with a brown grid - distinctive enough to read as "not a real texture".
   placeholderPng(size = 128) {
     const key = 'placeholder@' + size;
     if (this.thumbCache.has(key)) return this.thumbCache.get(key);
-    const png = encodePng(flatImage('#3d6fa8', 'grid', size));
+    const png = encodePng(flatImage('#001f2b', 'grid', size, '#774f17'));
     this.thumbCache.set(key, png);
     return png;
   }
