@@ -29,7 +29,7 @@
       "icon": "build/icon.ico"
     },
     "portable": {
-      "artifactName": "RallesAQ2TextureSwapper.exe"
+      "artifactName": "AQ2TexSwap.exe"
     }
   },
   "dependencies": {
