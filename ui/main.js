@@ -783,7 +783,16 @@ async function buildTextureBrowser(body, opts = {}) {
     if (mapSet) matches = matches.filter(c => mapSet.has(c.name));
     matches = [...matches].sort((a, b) =>
       (favs.has(b.name) - favs.has(a.name)) || a.name.localeCompare(b.name));
-    for (const c of matches.slice(0, 240)) {
+    matchesCache = matches;
+    rendered = 0;
+    appendBatch();
+  };
+
+  let matchesCache = [];
+  let rendered = 0;
+  const BATCH = 240;
+
+  const makeCell = c => {
       const cell = document.createElement('div');
       cell.className = 'pickcell' + (opts.currentTo === c.name ? ' current' : '');
       const img = document.createElement('img');
@@ -825,13 +834,33 @@ async function buildTextureBrowser(body, opts = {}) {
         if (opts.libraryMode) openSetPopup(plus, c.name);
         else if (opts.onPick) opts.onPick(c.name);
       });
-      grid.appendChild(cell);
-    }
-    const onMap = mapFilterName ? ` on ${mapFilterName}` : '';
-    $('pickCount').textContent = matches.length > 240
-      ? `showing 240 of ${matches.length}${onMap} — refine search`
-      : `${matches.length} textures${onMap}`;
+      return cell;
   };
+
+  const sentinel = document.createElement('div');
+  sentinel.style.height = '10px';
+
+  const updateCount = () => {
+    const onMap = mapFilterName ? ` on ${mapFilterName}` : '';
+    $('pickCount').textContent = rendered < matchesCache.length
+      ? `showing ${rendered} of ${matchesCache.length}${onMap} — scroll for more`
+      : `${matchesCache.length} textures${onMap}`;
+  };
+
+  const appendBatch = () => {
+    const grid = $('pickGrid');
+    sentinel.remove();
+    for (const c of matchesCache.slice(rendered, rendered + BATCH)) {
+      grid.appendChild(makeCell(c));
+    }
+    rendered = Math.min(rendered + BATCH, matchesCache.length);
+    if (rendered < matchesCache.length) grid.after(sentinel);
+    updateCount();
+  };
+
+  new IntersectionObserver(entries => {
+    if (entries.some(e => e.isIntersecting) && rendered < matchesCache.length) appendBatch();
+  }).observe(sentinel);
 
   const applyMapFilter = async () => {
     const v = mapInput.value.trim().toLowerCase();
