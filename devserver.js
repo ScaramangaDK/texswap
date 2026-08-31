@@ -51,6 +51,7 @@ function scanResult(inst) {
     hook: inst.swaps.hookStatus(),
     swapsEnabled: inst.swaps.enabled,
     lighting: inst.swaps.lightingConfig(),
+    missingFix: inst.swaps.missingFixConfig(),
     favTextures: inst.swaps.favTextures(),
     favSets: inst.swaps.favSets(),
     maps: inst.listMaps(),
@@ -104,6 +105,14 @@ async function handleApi(req, url, res) {
       case '/api/texdims': {
         if (!Array.isArray(body.names)) return json(res, 400, { error: 'need names[]' });
         return json(res, 200, { dims: inst.texDims(body.names.map(String), lowRes) });
+      }
+      case '/api/missingfix': {
+        try {
+          const result = inst.swaps.setMissingFix(body || {});
+          return json(res, 200, { ok: true, ...result, missingFix: inst.swaps.missingFixConfig() });
+        } catch (e) {
+          return json(res, 400, { error: e.message });
+        }
       }
       case '/api/favtex': {
         if (!body.name) return json(res, 400, { error: 'need name' });

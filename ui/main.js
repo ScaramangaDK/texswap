@@ -60,8 +60,12 @@ async function fillDims(batch, cells) {
 
 // bump THUMB_V whenever thumbnail rendering changes (placeholder art,
 // defringe tweaks...) - thumbs are browser-cached for 10 min per URL, so a
-// new version busts every stale copy at once
-const THUMB_V = '2';
+// new version busts every stale copy at once. bustThumbs() does the same
+// at runtime (e.g. after the missing-texture style changes).
+let THUMB_V = '2';
+function bustThumbs() {
+  THUMB_V = '2-' + Date.now();
+}
 function thumbUrl(params) {
   const url = new URL('/api/thumb', location.origin);
   url.searchParams.set('v', THUMB_V);
@@ -200,6 +204,15 @@ function renderHook() {
     : 'Set up managed lighting defaults for all maps (gl_modulate & co.)';
   light.addEventListener('click', () => openLighting('global'));
   area.appendChild(light);
+
+  const miss = document.createElement('button');
+  const mfOn = state.scan.missingFix && state.scan.missingFix.enabled;
+  miss.innerHTML = mfOn ? '🧱 Missing tex<span class="dot"></span>' : '🧱 Missing tex';
+  miss.title = mfOn
+    ? 'Missing-texture fix is ON - every texture your install lacks gets your chosen style in game'
+    : 'Choose a style for textures your install lacks, and apply it in game across all maps';
+  miss.addEventListener('click', openMissingFix);
+  area.appendChild(miss);
 
   const imp = document.createElement('button');
   imp.textContent = 'Import preset…';
@@ -519,7 +532,8 @@ function renderGrid() {
     }
     const meta = document.createElement('div');
     meta.className = 'tmeta';
-    const dims = t.missing ? 'missing' : `${t.w}×${t.h} ${t.ext.slice(1)}`;
+    const mfOn = state.scan && state.scan.missingFix && state.scan.missingFix.enabled;
+    const dims = t.missing ? (mfOn ? 'missing · styled by your 🧱 fix' : 'missing') : `${t.w}×${t.h} ${t.ext.slice(1)}`;
     meta.textContent = t.swap
       ? swapLabel(t.swap)
       : `${dims} · ${t.faces} faces · ${t.areaPct}%`;
@@ -1336,6 +1350,107 @@ function buildLightForm(container, values, placeholders) {
 }
 
 // One dialog, two clearly-scoped tabs: global defaults vs this-map override.
+async function openMissingFix() {
+  const mf = { ...(state.scan.missingFix || { enabled: false, color: '#001f2b', style: 'grid', color2: '#774f17' }) };
+  openModal(`
+    <div class="mhead">
+      <h3>🧱 Missing textures</h3>
+      <button class="mclose">✕</button>
+    </div>
+    <div class="mbody">
+      <p class="mnote">Maps often use textures your install doesn't have. Pick a stand-in style —
+      the app shows it on every missing texture, and with the fix enabled it is applied
+      <b>in game across all maps</b> too, so broken maps get a clean uniform look.
+      Textures you swap yourself always win over this.</p>
+      <p><label><input type="checkbox" id="mfEnabled"> <b>Apply in game across all maps</b></label></p>
+      <div class="stylerow" id="mfStyles"></div>
+      <div class="flatrow">
+        <label>Base: <input type="color" id="mfColor" value="${mf.color}"></label>
+        <img id="mfPreview" class="flatpreview" alt="preview">
+        <button class="primary" id="mfSave">Save</button>
+      </div>
+      <div class="sectionhead">Pattern color</div>
+      <div class="flatrow">
+        <label><input type="checkbox" id="mfAuto"> auto (darker shade of the base)</label>
+        <label>Custom: <input type="color" id="mfColor2"></label>
+      </div>
+      <p class="mnote" style="margin:6px 0 4px">…or pick from the Quake 2 palette:</p>
+      <div class="palgrid" id="mfPal"></div>
+    </div>
+  `);
+  $('mfEnabled').checked = mf.enabled;
+  const colorInput = $('mfColor');
+  const color2Input = $('mfColor2');
+  const autoBox = $('mfAuto');
+
+  const autoShade = () => {
+    const v = colorInput.value;
+    const [r, g, b] = [1, 3, 5].map(i => Math.max(0, parseInt(v.slice(i, i + 2), 16) - 28));
+    return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+  };
+  const thumbParams = (s, size) => {
+    const p = { flat: colorInput.value, style: s, size };
+    if (mf.color2 && s !== 'solid') p.color2 = mf.color2;
+    return p;
+  };
+  const sync = () => {
+    autoBox.checked = !mf.color2;
+    color2Input.value = mf.color2 || autoShade();
+    $('mfPreview').src = thumbUrl(thumbParams(mf.style, 96));
+    $('mfPal').querySelectorAll('.palswatch').forEach(x =>
+      x.classList.toggle('sel', !!mf.color2 && x.dataset.c === mf.color2));
+    const row = $('mfStyles');
+    row.textContent = '';
+    for (const s of FLAT_STYLES) {
+      const b = document.createElement('button');
+      b.className = 'stylebtn' + (s.id === mf.style ? ' sel' : '');
+      const img = document.createElement('img');
+      img.src = thumbUrl(thumbParams(s.id, 52));
+      const label = document.createElement('span');
+      label.textContent = s.label;
+      b.append(img, label);
+      b.addEventListener('click', () => { mf.style = s.id; sync(); });
+      row.appendChild(b);
+    }
+  };
+  try {
+    const pal = await fetch(`/api/palette?dir=${encodeURIComponent(state.dir)}`).then(r => r.json());
+    for (const c of pal.colors || []) {
+      const b = document.createElement('button');
+      b.className = 'palswatch';
+      b.style.background = c;
+      b.title = c;
+      b.dataset.c = c;
+      b.addEventListener('click', () => { mf.color2 = c; sync(); });
+      $('mfPal').appendChild(b);
+    }
+  } catch { /* color input still works */ }
+  colorInput.addEventListener('input', sync);
+  autoBox.addEventListener('change', () => { mf.color2 = autoBox.checked ? null : color2Input.value; sync(); });
+  color2Input.addEventListener('input', () => { mf.color2 = color2Input.value; sync(); });
+  $('mfSave').addEventListener('click', async () => {
+    try {
+      const r = await apiPost('/api/missingfix', {
+        enabled: $('mfEnabled').checked,
+        color: colorInput.value,
+        style: mf.style,
+        color2: mf.color2,
+      });
+      state.scan.missingFix = r.missingFix;
+      closeModal();
+      bustThumbs();
+      renderHook();
+      if (state.detail) await selectMap(state.detail.name);
+      toast(r.missingFix.enabled
+        ? `Missing-texture fix is on - ${(r.written || []).length} cfg(s) updated, F9 in game to see it`
+        : 'Missing-texture style saved (in-game fix is off)');
+    } catch (e) {
+      toast('Could not save: ' + e.message, true);
+    }
+  });
+  sync();
+}
+
 function openLighting(startTab) {
   const L = state.scan.lighting || { manage: false, global: {}, extra: '' };
   const d = state.detail;
@@ -1530,7 +1645,9 @@ function openGuide() {
       <div class="sectionhead">3 · Swap textures</div>
       <p>Pick a map, click any texture card. Choose a <b>stock texture</b> (search, filter by
       collection or by map), a <b>flat/pattern color</b> (incl. the ralle_colors palette),
-      or <b>your own image</b>. Click the skybox card to change the sky.</p>
+      or <b>your own image</b>. Click the skybox card to change the sky.
+      <b>🧱 Missing tex</b> (top bar) picks a stand-in style for textures your install
+      lacks and can apply it in game across all maps at once.</p>
 
       <div class="sectionhead">4 · See your changes</div>
       <p>In the game: changes auto-apply on every map load — mid-map, just press <b>F9</b>.

@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { flatImage, transcode, encodeAs, encodePngFile } from './gen.js';
+import { flatImage, parseColor, FLAT_STYLES, transcode, encodeAs, encodePngFile } from './gen.js';
 import { decodeImage } from './decoders.js';
 import { resolveImage } from './thumbs.js';
 
@@ -35,6 +35,20 @@ function cleanCvarMap(obj) {
     out[k.toLowerCase()] = val;
   }
   return out;
+}
+
+// Global missing-texture fix config: which flat style stands in for
+// textures the install doesn't have (and, when enabled, gets link'd
+// in-game across all maps). Falls back to the cyan2 + brown grid default.
+function cleanMissingFix(m) {
+  const f = { enabled: false, color: '#001f2b', style: 'grid', color2: '#774f17' };
+  if (!m || typeof m !== 'object') return f;
+  f.enabled = Boolean(m.enabled);
+  try { parseColor(m.color); f.color = m.color; } catch { /* keep default */ }
+  if (FLAT_STYLES.includes(m.style)) f.style = m.style;
+  if (m.color2 === null) f.color2 = null;
+  else { try { parseColor(m.color2); f.color2 = m.color2; } catch { /* keep default */ } }
+  return f;
 }
 
 // Per-user data root: presets survive game reinstalls/deletions here.
@@ -68,7 +82,7 @@ export class SwapStore {
         }
       } catch { /* keep going with whatever we could migrate */ }
     }
-    this.data = { version: 2, enabled: true, lighting: { manage: false, global: {}, extra: '' }, recentFlats: [], favTextures: [], favSets: {}, maps: {} };
+    this.data = { version: 2, enabled: true, lighting: { manage: false, global: {}, extra: '' }, missingFix: cleanMissingFix(null), recentFlats: [], favTextures: [], favSets: {}, maps: {} };
     try {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
       if (raw && raw.maps) {
@@ -80,6 +94,7 @@ export class SwapStore {
             global: cleanCvarMap(raw.lighting && raw.lighting.global),
             extra: typeof (raw.lighting && raw.lighting.extra) === 'string' ? raw.lighting.extra.slice(0, 2000) : '',
           },
+          missingFix: cleanMissingFix(raw.missingFix),
           recentFlats: Array.isArray(raw.recentFlats) ? raw.recentFlats.slice(0, 12) : [],
           favTextures: Array.isArray(raw.favTextures) ? raw.favTextures : [],
           favSets: (raw.favSets && typeof raw.favSets === 'object' && !Array.isArray(raw.favSets))
@@ -128,6 +143,18 @@ export class SwapStore {
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     fs.writeFileSync(abs, master);
     return this.setSwap(mapName, from, { type: 'custom', file: rel, w: img.width, h: img.height });
+  }
+
+  missingFixConfig() {
+    return this.data.missingFix || cleanMissingFix(null);
+  }
+
+  setMissingFix(cfg) {
+    parseColor(cfg.color); // throws on bad input
+    if (!FLAT_STYLES.includes(cfg.style)) throw new Error('bad style ' + cfg.style);
+    if (cfg.color2) parseColor(cfg.color2);
+    this.data.missingFix = cleanMissingFix(cfg);
+    return this.#saveAndMaterialize();
   }
 
   setFavTexture(name, fav) {
@@ -415,6 +442,10 @@ export class SwapStore {
       return null;
     }
     const relPath = `texswap/gen/${fileBase}${ext}`;
+    // the same gen file is often needed for many links in one materialize run
+    // (the missing-texture fix links one flat to thousands of names) - encode
+    // and write each unique file only once per run
+    if (this.genDone && this.genDone.has(relPath)) return relPath;
     const absPath = path.join(this.install.writeDir, 'texswap', 'gen', fileBase + ext);
     if (alwaysWrite || !fs.existsSync(absPath)) {
       try {
@@ -424,12 +455,14 @@ export class SwapStore {
         return null;
       }
     }
+    if (this.genDone) this.genDone.add(relPath);
     return relPath;
   }
 
   materialize() {
     const written = [];
     const warnings = [];
+    this.genDone = new Set();
     fs.mkdirSync(path.join(this.dir, 'gen'), { recursive: true });
 
     const maps = this.install.listMaps();
@@ -456,6 +489,24 @@ export class SwapStore {
         if (entry.sky && entry.sky.to && map.sky) {
           lines.push(`link env/${map.sky} env/${entry.sky.to}`);
           active++;
+        }
+      }
+
+      // global missing-texture fix: every texture the install lacks gets the
+      // user's chosen placeholder style, on every map (explicit swaps win)
+      const MF = this.data.missingFix;
+      if (this.enabled && MF && MF.enabled) {
+        const spec = { type: 'flat', color: MF.color, style: MF.style };
+        if (MF.color2) spec.color2 = MF.color2;
+        for (const name of this.install.missingTextures(map.file)) {
+          if (entry && entry.swaps[name]) continue;
+          for (const ext of ['.png', '.wal']) {
+            const target = this.#ensureGen(spec, ext, warnings);
+            if (target) {
+              lines.push(`link textures/${name}${ext} ${target}`);
+              active++;
+            }
+          }
         }
       }
 
