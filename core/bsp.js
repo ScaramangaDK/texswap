@@ -377,14 +377,26 @@ export function extractBspGeometry(buf) {
   }
 
   // drop exact duplicate faces (identical stacked brushes reference both
-  // copies from leaves): keep the better-lit twin, the buried one is black
+  // copies from leaves): keep the better-lit twin, the buried one is black.
+  // The key includes the face NORMAL: back-to-back twins (water tops and
+  // bottoms, thin fences) share vertices but face opposite ways, and with
+  // one-sided rendering both sides must survive - only same-facing
+  // duplicates may collapse.
   const byShape = new Map();
   const dedupedFaces = [];
   for (const f of facesOut) {
+    let nx = 0, ny = 0, nz = 0;
+    for (let i = 0; i < f.poly.length; i++) {
+      const a = f.poly[i].pt, b = f.poly[(i + 1) % f.poly.length].pt;
+      nx += (a[1] - b[1]) * (a[2] + b[2]);
+      ny += (a[2] - b[2]) * (a[0] + b[0]);
+      nz += (a[0] - b[0]) * (a[1] + b[1]);
+    }
+    const nl = Math.hypot(nx, ny, nz) || 1;
     const key = f.poly
       .map(v => `${Math.round(v.pt[0])},${Math.round(v.pt[1])},${Math.round(v.pt[2])}`)
       .sort()
-      .join('|');
+      .join('|') + `|${(nx / nl).toFixed(2)},${(ny / nl).toFixed(2)},${(nz / nl).toFixed(2)}`;
     const score = f.lm ? (f.lmAvg || 0) : 150; // unlit renders bright-ish
     const prev = byShape.get(key);
     if (!prev) {
