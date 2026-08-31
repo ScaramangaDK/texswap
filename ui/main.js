@@ -58,8 +58,13 @@ async function fillDims(batch, cells) {
   });
 }
 
+// bump THUMB_V whenever thumbnail rendering changes (placeholder art,
+// defringe tweaks...) - thumbs are browser-cached for 10 min per URL, so a
+// new version busts every stale copy at once
+const THUMB_V = '2';
 function thumbUrl(params) {
   const url = new URL('/api/thumb', location.origin);
+  url.searchParams.set('v', THUMB_V);
   url.searchParams.set('dir', state.dir);
   url.searchParams.set('res', state.res);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
