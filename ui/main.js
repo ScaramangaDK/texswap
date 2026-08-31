@@ -630,10 +630,21 @@ const FLAT_STYLES = [
   { id: 'diag', label: 'diagonal' },
 ];
 
+// Read the (flat) color of a loaded same-origin thumbnail image.
+function sampleImgColor(img) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 1;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(img, 0, 0, 1, 1);
+  const d = ctx.getImageData(0, 0, 1, 1).data;
+  return '#' + [d[0], d[1], d[2]].map(v => v.toString(16).padStart(2, '0')).join('');
+}
+
 async function renderFlatTab(t) {
   const cur = t.swap && t.swap.type === 'flat' ? t.swap : null;
   let color = cur ? cur.color : '#9aa0a8';
   let style = cur && cur.style ? cur.style : 'solid';
+  let updateRalleHint = () => {};
   const body = $('mbody');
   body.innerHTML = `
     <p style="color:var(--dim);margin-bottom:12px">Replace with a generated flat texture — great for visibility. Patterns add subtle lines so you can still judge distance and speed.</p>
@@ -660,7 +671,7 @@ async function renderFlatTab(t) {
       const label = document.createElement('span');
       label.textContent = s.label;
       b.append(img, label);
-      b.addEventListener('click', () => { style = s.id; renderStyles(); updatePreview(); });
+      b.addEventListener('click', () => { style = s.id; renderStyles(); updatePreview(); updateRalleHint(); });
       styleRow.appendChild(b);
     }
   };
@@ -707,6 +718,14 @@ async function renderFlatTab(t) {
     const head = document.createElement('div');
     head.className = 'sectionhead';
     head.textContent = `Quake palette — ralle_colors (${ralle.length})`;
+    const ralleHint = document.createElement('p');
+    ralleHint.style.cssText = 'color:var(--dim);font-size:12px;margin-bottom:10px';
+    updateRalleHint = () => {
+      ralleHint.textContent = style === 'solid'
+        ? 'Click a color to use it as-is (the original .wal file).'
+        : `Click a color to use it with the "${style}" pattern (generated on the fly, same palette color).`;
+    };
+    updateRalleHint();
     const grid = document.createElement('div');
     grid.className = 'pickgrid';
     for (const c of ralle) {
@@ -720,13 +739,24 @@ async function renderFlatTab(t) {
       label.className = 'pname';
       label.textContent = c.name.slice('ralle_colors/'.length);
       cell.append(img, label);
-      cell.addEventListener('click', () => {
-        closeModal();
-        setSwap(t.name, { type: 'stock', to: c.name });
+      cell.addEventListener('click', async () => {
+        if (style === 'solid') {
+          closeModal();
+          setSwap(t.name, { type: 'stock', to: c.name });
+          return;
+        }
+        try {
+          if (!img.complete || !img.naturalWidth) await img.decode();
+          const color = sampleImgColor(img);
+          closeModal();
+          setSwap(t.name, { type: 'flat', color, style });
+        } catch {
+          toast('Could not read that color yet - click again once its thumbnail has loaded', true);
+        }
       });
       grid.appendChild(cell);
     }
-    section.append(head, grid);
+    section.append(head, ralleHint, grid);
   }
 }
 
