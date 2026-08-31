@@ -102,24 +102,36 @@ async function open(detail) {
   } else {
     scene.add(new THREE.AmbientLight(0xffffff, 1.35));
   }
-  // brightness: user-tuned via the slider (the engine stacks intensity,
-  // overbright and gamma on top of gl_modulate, so this is a taste control)
-  const saved = parseFloat(localStorage.getItem('aq2ts.vbright'));
-  const lmIntensity = Number.isFinite(saved) && saved >= 0.5 && saved <= 12 ? saved : 3;
-  // additive base brightness like the engine's gl_brightness (default ~0.1):
-  // lifts pitch-black bakes so texture detail stays visible in dark rooms
+  // q2pro's world lighting: tex * (lightmap + gl_brightness) * gl_modulate.
+  // meshbasic computes tex * lm * intensity * RECIPROCAL_PI + tex * uBright,
+  // so intensity = modulate * PI and uBright = brightness * modulate.
   const Lg = AQTS.state.scan && AQTS.state.scan.lighting;
-  const gb = Lg && Lg.manage && Lg.global && Lg.global.gl_brightness ? parseFloat(Lg.global.gl_brightness) : 0.1;
-  const baseBright = Math.min(1, Math.max(0, (isNaN(gb) ? 0.1 : gb) * 2.5));
-  const brightUniform = { value: baseBright * (lmIntensity / 3) };
-  const brightInput = document.getElementById('vBright');
-  brightInput.value = lmIntensity;
-  brightInput.oninput = () => {
-    const v = parseFloat(brightInput.value);
-    localStorage.setItem('aq2ts.vbright', v);
-    brightUniform.value = baseBright * (v / 3);
-    if (ctx) for (const m of ctx.meshes) m.material.lightMapIntensity = v;
+  const cvar = n => Lg && Lg.manage && Lg.global ? parseFloat(Lg.global[n]) : NaN;
+  const savedMod = parseFloat(localStorage.getItem('aq2ts.vmod'));
+  const savedAdd = parseFloat(localStorage.getItem('aq2ts.vadd'));
+  let mod = Number.isFinite(savedMod) ? savedMod : (cvar('gl_modulate') || 1);
+  let add = Number.isFinite(savedAdd) ? savedAdd : (Number.isFinite(cvar('gl_brightness')) ? cvar('gl_brightness') : 0.1);
+  mod = Math.min(4, Math.max(0.25, mod));
+  add = Math.min(0.4, Math.max(0, add));
+  const lmIntensity = mod * Math.PI;
+  const brightUniform = { value: add * mod };
+  const modInput = document.getElementById('vMod'), addInput = document.getElementById('vAdd');
+  const modVal = document.getElementById('vModVal'), addVal = document.getElementById('vAddVal');
+  const applyLight = () => {
+    mod = parseFloat(modInput.value);
+    add = parseFloat(addInput.value);
+    localStorage.setItem('aq2ts.vmod', mod);
+    localStorage.setItem('aq2ts.vadd', add);
+    modVal.textContent = mod.toFixed(2);
+    addVal.textContent = add.toFixed(3);
+    brightUniform.value = add * mod;
+    if (ctx) for (const m of ctx.meshes) m.material.lightMapIntensity = mod * Math.PI;
   };
+  modInput.value = mod;
+  addInput.value = add;
+  modVal.textContent = mod.toFixed(2);
+  addVal.textContent = add.toFixed(3);
+  modInput.oninput = addInput.oninput = applyLight;
 
   const camera = new THREE.PerspectiveCamera(80, 1, 1, 30000);
   camera.rotation.order = 'YXZ';

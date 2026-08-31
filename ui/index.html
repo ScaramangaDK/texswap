@@ -97,7 +97,8 @@
     <div class="vtop">
       <span id="vMapName" class="mono"></span>
       <span id="vHover" class="vhover mono"></span>
-      <label class="vbright" title="Viewer brightness (lightmap intensity)">☀ <input type="range" id="vBright" min="0.5" max="12" step="0.25"></label>
+      <label class="vbright" title="gl_modulate - multiplies the lightmap">gl_modulate <input type="range" id="vMod" min="0.25" max="4" step="0.05"><span id="vModVal" class="vval mono"></span></label>
+      <label class="vbright" title="gl_brightness - additive lift on top of the lightmap (engine default 0.1)">gl_brightness <input type="range" id="vAdd" min="0" max="0.4" step="0.005"><span id="vAddVal" class="vval mono"></span></label>
       <button id="vClose">✕ close (Esc)</button>
     </div>
     <div class="vhelp">drag = look around · WASD move · Q/E down/up · Shift fast · click a surface to select its texture</div>

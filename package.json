@@ -20,7 +20,9 @@
       "devserver.js",
       "core/**",
       "ui/**",
-      "!ui/logo.png"
+      "!ui/logo.png",
+      "!ui/logo2.png",
+      "!ui/thumbnail.png"
     ],
     "win": {
       "target": "portable",

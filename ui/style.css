@@ -1044,9 +1044,10 @@ footer code { color: var(--accent-hi); font-family: var(--mono); }
   align-items: center;
   gap: 8px;
   color: var(--accent-hi);
-  font-size: 14px;
+  font-size: 12.5px;
 }
-.vbright input[type="range"] { width: 130px; }
+.vbright input[type="range"] { width: 100px; }
+.vbright .vval { color: var(--text); font-size: 12px; min-width: 38px; text-align: right; }
 
 .vhelp {
   position: absolute;
