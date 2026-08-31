@@ -12,12 +12,13 @@
       <span class="logo">AQ2</span>
       <div>
         <h1>Texture Swapper</h1>
-        <span class="tagline">milestone 1 — map &amp; texture scanner</span>
+        <span class="tagline">milestone 2 — swap &amp; apply via softlinks</span>
       </div>
     </div>
+    <div id="hookArea"></div>
     <div class="dirbar">
-      <input id="dirInput" type="text" spellcheck="false" placeholder="Path to game dir (baseaq)">
-      <button id="rescanBtn" title="Rescan the game directory">Rescan</button>
+      <input id="dirInput" type="text" spellcheck="false" placeholder="Path to AQ2 install (root or game dir)">
+      <button id="rescanBtn" title="Rescan the install">Rescan</button>
     </div>
   </header>
 
@@ -43,11 +44,15 @@
             <span id="mapTitle" class="subtitle"></span>
             <span id="mapMeta" class="meta"></span>
           </div>
-          <div class="skycard" id="skyCard">
-            <img id="skyThumb" alt="skybox">
-            <div>
-              <span class="skylabel">skybox</span>
-              <span id="skyName"></span>
+          <div class="headactions">
+            <button id="resetMapBtn" class="danger hidden">Reset map</button>
+            <div class="skycard" id="skyCard" title="Click to change the skybox">
+              <img id="skyThumb" alt="skybox">
+              <div>
+                <span class="skylabel">skybox</span>
+                <span id="skyName"></span>
+                <span id="skySwapInfo" class="skyswap"></span>
+              </div>
             </div>
           </div>
         </div>
@@ -67,8 +72,13 @@
   </main>
 
   <footer>
-    Swapping, presets &amp; softlink export arrive in the next milestone — this build scans and browses.
+    Click any texture to replace it — changes are written as <code>link</code> cfgs the game applies on map load.
   </footer>
+
+  <div id="modalOverlay" class="modal-overlay hidden">
+    <div id="modal" class="modal"></div>
+  </div>
+  <div id="toasts"></div>
 
   <script src="main.js"></script>
 </body>

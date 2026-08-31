@@ -57,26 +57,36 @@ Stack: **Electron** (Node backend + web UI) → portable .exe (~90 MB), and the 
 
 ## Progress
 
-- **2026-08-31 — Milestone 1 done**: scanner + browser working against the real install. Reads loose files + `.pak` + `.pkz`; parses all 26 maps (pak0 + mapjam) with titles, skyboxes, per-texture face counts and visible-area ranking; decodes WAL (palette), PCX, TGA, PNG, JPG thumbnails; dark UI with map list, search, sort, utility-surface toggle, skybox card. Run with `npm run dev`. Next: milestone 2 = swap UI + softlink cfg writer + in-game verification.
+- **2026-08-31 — Milestone 1 done**: scanner + browser working against the real install. Reads loose files + `.pak` + `.pkz`; parses maps with titles, skyboxes, per-texture face counts and visible-area ranking; decodes WAL (palette), PCX, TGA, PNG, JPG thumbnails; dark UI with map list, search, sort, utility-surface toggle, skybox card. Run with `npm run dev`.
+- **2026-08-31 — Milestone 2 done (engine-verified)**: full swap pipeline working.
+  - Scanner now mirrors the engine's real search path: `action/` layered over `baseaq/`, non-numbered archives > numbered pakN > loose files, plus the shipped soft-link fallbacks — 1804 maps and 20,884 textures found on the mapping install.
+  - Swap UI: click texture → picker (stock textures with search, or generated flat/grid visibility textures), skybox picker, per-swap remove, per-map reset, per-map swap badges.
+  - Writes `<modDir>/texswap/<map>.cfg` for every map (hard `link` lines + `unlink --all` + `r_reload`), generated textures in `texswap/gen/` (same-extension transcodes: PNG/JPG/TGA/WAL encoders incl. palette quantization + mipmaps), `presets.json`, `hook.cfg`, and one appended line in `autoexec.cfg`.
+  - Proven headlessly with q2proded: exec chain autoexec → hook → map cfg; texture and sky links resolve to our generated files. Remaining: visual confirmation in the live client (map load hook timing + r_reload).
+
+## Verified engine facts (tested against AQtion q2proded + source, 2026-08-31)
+
+- **`softlink` is fallback-only** — it fires only when the requested file does not exist. **`link` (hard) expands before the file search and overrides existing files → the app uses `link`.** Same syntax; `unlink --all` clears only hard links (AQtion's shipped soft links live in a separate list — clean namespace separation).
+- Links are prefix-matched (directory links work, used for skybox swaps: `link env/<from> env/<to>`), cleared on `fs_restart`, applied per exec.
+- Cross-extension links resolve at FS level, but the image decoder is chosen by the *requested* extension → the app transcodes replacements to matching extensions.
+- `cl_beginmapcmd` + `$cl_mapname` macro exist (client), `r_reload` refreshes textures in-game, `whereis` resolves links (great for debugging).
+- **Hi/low-res texture settings** (from user): `r_override_textures` enables truecolor override of WAL/PCX; `r_texture_overrides` is a bitmask choosing which categories (world textures, skins, HUD, console) use hi-res — user runs 15 (world low-res) and toggles 31 (world hi-res). The app links **all** relevant extensions (existing + canonical .png and .wal) so swaps work in both modes. A per-preset hi/low toggle is planned for V3.
 
 ## Roadmap
 
 - **V1 (core)**: everything above, including skybox swapping. Test in-game on user's machine, then beta with one friend.
 - **V2 (wow)**: built-in 3D map viewer — renders the actual BSP with lightmaps in the app, click a wall to select its texture, swaps preview instantly without the game running.
-- **V3 (presets+)**: lighting presets (`gl_modulate`, `gl_modulate_world`, `gl_brightness`, `intensity`, …) saved alongside texture presets; custom image import; sound swaps; "team pack" bundle sharing.
+- **V3 (presets+)**: named presets + export/import files; lighting presets (`gl_modulate`, `gl_modulate_world`, `gl_brightness`, `intensity`, …) saved alongside texture presets; hi/low-res toggle (`r_texture_overrides` 15/31) per preset; custom image import; sound swaps; "team pack" bundle sharing; Electron shell + portable .exe.
 - **V4 (the hub)**: the app becomes the everyday AQ2 launcher:
   - **Player setup**: edit nick, skin/model, and common client settings from a friendly UI (writes cvars like `name`/`skin` to cfg)
   - **Server browser**: query master servers / aq2world list + UDP `status` pings → live list of Action servers with map, players, ping; see who's playing where
   - **Connect from app**: click a server → launches `aqtion.exe +connect ip:port` with your chosen install profile, nick, and texture presets already hooked in
 
-## To verify while building V1 (against AQtion/q2pro source + live game)
+## Still to verify in the live client
 
-1. Does `cl_beginmapcmd` (or similar q2pro hook) expand a `$mapname`-style macro so auto-per-map exec works? Fallback: keybind.
-2. How to *remove* a softlink in-session (is there an unlink command, or does re-linking/`fs_restart`/restart handle reset)?
-3. Best texture-flush command after changing links mid-map (`r_reload`? `vid_restart`? `fs_restart`?).
-4. Do cross-extension links work (`.wal` → `.tga`), or should generated flat textures be written as real `.wal` files? (Shipped examples only link same-extension; writing `.wal` is the safe route.)
-5. Is there a `sky <name>` console command for per-map skybox override (simpler than 12 env softlinks)?
-6. Engine source: https://github.com/actionquake
+1. `cl_beginmapcmd` timing: does the map cfg + `r_reload` apply cleanly on map load, and does `$cl_mapname` stay unexpanded inside the quoted cvar until map start? Fallback: the F9 bind (also installed by hook.cfg).
+2. Visual quality of generated WALs (palette quantization) in low-res mode.
+3. Engine source: https://github.com/actionquake (branch `aqtion`)
 
 ## Notes
 
