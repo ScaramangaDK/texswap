@@ -414,3 +414,46 @@ button.primary:hover { background: var(--accent2); color: #1a1206; }
 }
 .toast.err { border-left-color: var(--bad); }
 .badge.swapbadge { background: var(--accent); color: #1a1206; font-weight: 700; }
+
+/* preset row */
+.presetrow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.presetrow .plabel { color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--bg3);
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  padding: 4px 6px 4px 12px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.chip:hover { border-color: var(--accent); color: var(--accent2); }
+.chip .chipdel {
+  background: none;
+  border: none;
+  color: var(--dim);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 4px;
+  border-radius: 50%;
+}
+.chip .chipdel:hover { color: var(--bad); }
+.presetrow button.small { padding: 4px 11px; font-size: 12px; }
+button.off { border-color: var(--bad); color: var(--bad); }
+.namefield {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 14px;
+}

@@ -164,6 +164,8 @@ export class Install {
       sky: parsed.worldspawn.sky || null,
       skySwap: skySwap ? skySwap.to : null,
       swapCount: this.swaps.swapCount(mapName),
+      savedPresets: this.swaps.savedPresetNames(mapName),
+      swapsEnabled: this.swaps.enabled,
       extended: parsed.extended,
       warnings: parsed.warnings,
       hasPalette: Boolean(this.palette),

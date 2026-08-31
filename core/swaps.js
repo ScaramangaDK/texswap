@@ -16,16 +16,33 @@ function sanitize(name) {
   return name.replaceAll('/', '-').replace(/[^a-z0-9_.-]/gi, '_');
 }
 
+function sanitizePresetName(name) {
+  const clean = String(name || '').trim().replace(/[^a-z0-9 _.-]/gi, '').slice(0, 24);
+  if (!clean) throw new Error('invalid preset name');
+  return clean;
+}
+
 export class SwapStore {
   constructor(install) {
     this.install = install;
     this.dir = path.join(install.writeDir, 'texswap');
     this.file = path.join(this.dir, 'presets.json');
-    this.data = { version: 1, maps: {} };
+    this.data = { version: 2, enabled: true, maps: {} };
     try {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
-      if (raw && raw.maps) this.data = raw;
+      if (raw && raw.maps) {
+        this.data = { version: 2, enabled: raw.enabled !== false, maps: raw.maps };
+      }
     } catch { /* no presets yet */ }
+  }
+
+  get enabled() {
+    return this.data.enabled !== false;
+  }
+
+  setEnabled(on) {
+    this.data.enabled = Boolean(on);
+    return this.#saveAndMaterialize();
   }
 
   mapEntry(mapName, create = false) {
@@ -48,13 +65,93 @@ export class SwapStore {
   }
 
   resetMap(mapName) {
-    delete this.data.maps[mapName];
+    const e = this.data.maps[mapName];
+    if (e) {
+      // keep saved presets; only clear the working state
+      e.swaps = {};
+      e.sky = null;
+      if (!e.saved || !Object.keys(e.saved).length) delete this.data.maps[mapName];
+    }
     return this.#saveAndMaterialize();
   }
 
   swapsFor(mapName) {
     const e = this.data.maps[mapName];
     return { swaps: e ? e.swaps : {}, sky: e && e.sky ? e.sky : null };
+  }
+
+  savedPresetNames(mapName) {
+    const e = this.data.maps[mapName];
+    return e && e.saved ? Object.keys(e.saved).sort() : [];
+  }
+
+  savePreset(mapName, name) {
+    const clean = sanitizePresetName(name);
+    const e = this.mapEntry(mapName, true);
+    if (!e.saved) e.saved = {};
+    e.saved[clean] = { swaps: structuredClone(e.swaps), sky: e.sky ? { ...e.sky } : null };
+    fs.mkdirSync(this.dir, { recursive: true });
+    fs.writeFileSync(this.file, JSON.stringify(this.data, null, 2));
+    return clean;
+  }
+
+  loadPreset(mapName, name) {
+    const e = this.data.maps[mapName];
+    if (!e || !e.saved || !e.saved[name]) throw new Error(`no preset "${name}" for ${mapName}`);
+    e.swaps = structuredClone(e.saved[name].swaps);
+    e.sky = e.saved[name].sky ? { ...e.saved[name].sky } : null;
+    return this.#saveAndMaterialize();
+  }
+
+  deletePreset(mapName, name) {
+    const e = this.data.maps[mapName];
+    if (e && e.saved) delete e.saved[name];
+    fs.writeFileSync(this.file, JSON.stringify(this.data, null, 2));
+  }
+
+  // Export the map's current working state as a shareable object; also writes
+  // it to texswap/exports/ so the user has a file to send to friends.
+  exportMap(mapName) {
+    const { swaps, sky } = this.swapsFor(mapName);
+    if (!Object.keys(swaps).length && !sky) throw new Error('nothing to export - no swaps on this map');
+    const obj = {
+      app: 'aq2-texture-swapper',
+      format: 1,
+      exported: new Date().toISOString(),
+      map: mapName,
+      swaps,
+      sky,
+    };
+    const dir = path.join(this.dir, 'exports');
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `${mapName}.aq2swap.json`);
+    fs.writeFileSync(file, JSON.stringify(obj, null, 2));
+    return { obj, file };
+  }
+
+  importMap(obj) {
+    if (!obj || obj.app !== 'aq2-texture-swapper' || !obj.map || typeof obj.swaps !== 'object') {
+      throw new Error('not a valid .aq2swap.json preset file');
+    }
+    const warnings = [];
+    const known = this.install.listMaps().some(m => m.name === obj.map);
+    if (!known) warnings.push(`map "${obj.map}" is not in this install - preset stored, applies if you get the map`);
+    const swaps = {};
+    for (const [from, spec] of Object.entries(obj.swaps)) {
+      if (spec && spec.type === 'flat' && typeof spec.color === 'string') swaps[from] = spec;
+      else if (spec && spec.type === 'stock' && typeof spec.to === 'string') {
+        if (!this.install.fs.findFirst('textures/' + spec.to, ALL_TEX_EXTS.concat('.pcx'))) {
+          warnings.push(`replacement "${spec.to}" not found here - skipped for ${from}`);
+          continue;
+        }
+        swaps[from] = spec;
+      }
+    }
+    const e = this.mapEntry(obj.map, true);
+    e.swaps = swaps;
+    e.sky = obj.sky && obj.sky.to ? { to: obj.sky.to } : null;
+    const result = this.#saveAndMaterialize();
+    return { map: obj.map, known, warnings: warnings.concat(result.warnings), written: result.written };
   }
 
   swapCount(mapName) {
@@ -116,7 +213,7 @@ export class SwapStore {
     const maps = this.install.listMaps();
     for (const map of maps) {
       if (map.error) continue;
-      const entry = this.data.maps[map.name];
+      const entry = this.enabled ? this.data.maps[map.name] : null;
       const lines = [
         `// AQ2 Texture Swapper - auto-generated for map "${map.name}", do not edit`,
         'unlink --all',

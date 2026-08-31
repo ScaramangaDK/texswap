@@ -48,6 +48,7 @@ function scanResult(inst) {
     warnings: inst.fs.warnings,
     hasPalette: Boolean(inst.palette),
     hook: inst.swaps.hookStatus(),
+    swapsEnabled: inst.swaps.enabled,
     maps: inst.listMaps(),
   };
 }
@@ -107,6 +108,30 @@ async function handleApi(req, url, res) {
       case '/api/hook': {
         const status = inst.swaps.installHook();
         return json(res, 200, { ok: true, hook: status });
+      }
+      case '/api/enabled': {
+        const result = inst.swaps.setEnabled(body.enabled);
+        return json(res, 200, { ok: true, ...result, enabled: inst.swaps.enabled });
+      }
+      case '/api/preset/save': {
+        const name = inst.swaps.savePreset(body.map, body.name);
+        return json(res, 200, { ok: true, name, detail: inst.mapDetail(body.map) });
+      }
+      case '/api/preset/load': {
+        const result = inst.swaps.loadPreset(body.map, body.name);
+        return json(res, 200, { ok: true, ...result, detail: inst.mapDetail(body.map) });
+      }
+      case '/api/preset/delete': {
+        inst.swaps.deletePreset(body.map, body.name);
+        return json(res, 200, { ok: true, detail: inst.mapDetail(body.map) });
+      }
+      case '/api/export': {
+        const { obj, file } = inst.swaps.exportMap(body.map);
+        return json(res, 200, { ok: true, file, data: obj });
+      }
+      case '/api/import': {
+        const result = inst.swaps.importMap(body.data);
+        return json(res, 200, { ok: true, ...result });
       }
       default:
         return json(res, 404, { error: 'unknown api route' });

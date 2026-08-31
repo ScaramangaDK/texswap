@@ -64,6 +64,8 @@ Stack: **Electron** (Node backend + web UI) → portable .exe (~90 MB), and the 
   - Writes `<modDir>/texswap/<map>.cfg` for every map (hard `link` lines + `unlink --all` + `r_reload`), generated textures in `texswap/gen/` (same-extension transcodes: PNG/JPG/TGA/WAL encoders incl. palette quantization + mipmaps), `presets.json`, `hook.cfg`, and one appended line in `autoexec.cfg`.
   - Proven headlessly with q2proded (exec chain autoexec → hook → map cfg; texture and sky links resolve to our generated files) and then **confirmed live in the user's q2pro client on urbanjungle**: flat-grid walls, stone ground, swapped sky, lightmaps intact. One fix was needed along the way: `${cl_mapname}` must be braced in the hook (plain `$cl_mapname.cfg` parses the dot into the macro name and expands empty).
 
+- **2026-08-31 — Milestone 3 done**: named presets per map (save/load/delete chips), export to `texswap/exports/<map>.aq2swap.json` for Discord sharing, import with validation (missing replacement textures skipped with warnings, unknown maps stored for later), and a master "Swaps: ON/OFF" toggle that parks every map at stock while keeping all presets. Verified end-to-end incl. export→import roundtrip.
+
 ## Verified engine facts (tested against AQtion q2proded + source, 2026-08-31)
 
 - **`softlink` is fallback-only** — it fires only when the requested file does not exist. **`link` (hard) expands before the file search and overrides existing files → the app uses `link`.** Same syntax; `unlink --all` clears only hard links (AQtion's shipped soft links live in a separate list — clean namespace separation).
@@ -76,7 +78,7 @@ Stack: **Electron** (Node backend + web UI) → portable .exe (~90 MB), and the 
 
 - **V1 (core)**: everything above, including skybox swapping. Test in-game on user's machine, then beta with one friend.
 - **V2 (wow)**: built-in 3D map viewer — renders the actual BSP with lightmaps in the app, click a wall to select its texture, swaps preview instantly without the game running.
-- **V3 (presets+)**: named presets + export/import files; lighting presets (`gl_modulate`, `gl_modulate_world`, `gl_brightness`, `intensity`, …) saved alongside texture presets; hi/low-res toggle (`r_texture_overrides` 15/31) per preset; custom image import; sound swaps; "team pack" bundle sharing; Electron shell + portable .exe.
+- **V3 (presets+)**: ~~named presets + export/import files~~ ✔ done. Remaining: lighting presets (`gl_modulate`, `gl_modulate_world`, `gl_brightness`, `intensity`, …) saved alongside texture presets; hi/low-res toggle (`r_texture_overrides` 15/31) per preset; custom image import; sound swaps; "team pack" bundle sharing; **Electron shell + portable .exe** (next big one — friends can't use the dev server).
 - **V4 (the hub)**: the app becomes the everyday AQ2 launcher:
   *(note: user starts the game via `q2pro.exe`, not the `aqtion.exe` stub — make the launch exe configurable)*
   - **Player setup**: edit nick, skin/model, and common client settings from a friendly UI (writes cvars like `name`/`skin` to cfg)

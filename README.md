@@ -4,8 +4,9 @@ Restyle AQ2/AQtion map textures for gameplay: browse every texture a map uses,
 swap them via q2pro's `softlink` command, preview the result, and save per-map
 presets you can share with friends.
 
-**Status: milestone 2** — swapping works end-to-end (engine-verified).
-See [BRAINSTORM.md](BRAINSTORM.md) for the full plan, roadmap and verified
+**Status: milestone 3** — swapping confirmed live in-game; named presets,
+export/import sharing, and a master on/off switch. See
+[BRAINSTORM.md](BRAINSTORM.md) for the full plan, roadmap and verified
 engine facts.
 
 ## Run (dev)
@@ -24,6 +25,11 @@ Open http://127.0.0.1:5892 and point it at your AQ2 install root (e.g.
    visibility texture; click the skybox card to change the sky.
 3. Play. Presets auto-apply on every map load; press **F9** to re-apply after
    changing things mid-map.
+
+Presets: **Save as preset…** keeps named snapshots per map (chips to load or
+delete), **Export…** writes `texswap/exports/<map>.aq2swap.json` to send to
+friends, **Import preset…** loads such a file. **Swaps: ON/OFF** in the header
+parks everything at stock without losing presets.
 
 Everything the app writes lives in `<modDir>/texswap/` (per-map cfgs with hard
 `link` commands, generated textures in `gen/`, `presets.json`) plus that one

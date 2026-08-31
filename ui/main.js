@@ -118,7 +118,11 @@ async function rescan(refresh) {
 function renderHook() {
   const area = $('hookArea');
   area.textContent = '';
+  area.style.display = 'flex';
+  area.style.gap = '8px';
+  area.style.alignItems = 'center';
   if (!state.scan) return;
+
   if (state.scan.hook.installed) {
     const chip = document.createElement('span');
     chip.className = 'hookchip ok';
@@ -131,6 +135,57 @@ function renderHook() {
     btn.title = 'Adds one line to autoexec.cfg so the game applies your presets on every map load (and binds F9 to re-apply).';
     btn.addEventListener('click', installHook);
     area.appendChild(btn);
+  }
+
+  const toggle = document.createElement('button');
+  const on = state.scan.swapsEnabled !== false;
+  toggle.textContent = on ? 'Swaps: ON' : 'Swaps: OFF';
+  toggle.className = on ? '' : 'off';
+  toggle.title = on
+    ? 'Click to disable all swaps (presets are kept; maps load stock)'
+    : 'All swaps are disabled - click to re-enable your presets';
+  toggle.addEventListener('click', toggleEnabled);
+  area.appendChild(toggle);
+
+  const imp = document.createElement('button');
+  imp.textContent = 'Import preset…';
+  imp.title = 'Load a .aq2swap.json file from a friend';
+  imp.addEventListener('click', () => $('importFile').click());
+  area.appendChild(imp);
+}
+
+async function toggleEnabled() {
+  const target = !(state.scan.swapsEnabled !== false);
+  try {
+    const r = await apiPost('/api/enabled', { enabled: target });
+    state.scan.swapsEnabled = r.enabled;
+    renderHook();
+    reportWritten(r);
+    toast(r.enabled
+      ? 'Swaps re-enabled - active again on next map load / F9'
+      : 'All swaps disabled - maps load stock (presets kept)');
+  } catch (e) {
+    toast('Toggle failed: ' + e.message, true);
+  }
+}
+
+async function importPresetFile(file) {
+  let data;
+  try {
+    data = JSON.parse(await file.text());
+  } catch {
+    toast('Not a valid preset file (bad JSON)', true);
+    return;
+  }
+  try {
+    const r = await apiPost('/api/import', { data });
+    for (const w of r.warnings || []) toast(w, true);
+    toast(`Imported preset for "${r.map}"`);
+    if (state.scan && state.scan.maps.some(m => m.name === r.map)) {
+      await selectMap(r.map);
+    }
+  } catch (e) {
+    toast('Import failed: ' + e.message, true);
   }
 }
 
@@ -224,8 +279,108 @@ function renderDetail() {
   resetBtn.classList.toggle('hidden', !d.swapCount);
   resetBtn.textContent = `Reset map (${d.swapCount})`;
 
+  renderPresetRow();
   renderGrid();
   syncMapListEntry();
+}
+
+function renderPresetRow() {
+  const d = state.detail;
+  const row = $('presetRow');
+  row.textContent = '';
+  if (!d) return;
+
+  const label = document.createElement('span');
+  label.className = 'plabel';
+  label.textContent = 'presets';
+  row.appendChild(label);
+
+  for (const name of d.savedPresets || []) {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.title = `Load preset "${name}"`;
+    const txt = document.createElement('span');
+    txt.textContent = name;
+    const del = document.createElement('button');
+    del.className = 'chipdel';
+    del.textContent = '✕';
+    del.title = `Delete preset "${name}"`;
+    del.addEventListener('click', async ev => {
+      ev.stopPropagation();
+      if (!confirm(`Delete preset "${name}"?`)) return;
+      try {
+        const r = await apiPost('/api/preset/delete', { map: d.name, name });
+        state.detail = r.detail;
+        renderPresetRow();
+        toast(`Deleted preset "${name}"`);
+      } catch (e) { toast('Delete failed: ' + e.message, true); }
+    });
+    chip.append(txt, del);
+    chip.addEventListener('click', async () => {
+      try {
+        applyMutation(await apiPost('/api/preset/load', { map: d.name, name }));
+        toast(`Loaded preset "${name}" - F9 in game to see it`);
+      } catch (e) { toast('Load failed: ' + e.message, true); }
+    });
+    row.appendChild(chip);
+  }
+
+  const save = document.createElement('button');
+  save.className = 'small';
+  save.textContent = 'Save as preset…';
+  save.disabled = !d.swapCount;
+  save.title = d.swapCount ? 'Save the current swaps under a name' : 'Add some swaps first';
+  save.addEventListener('click', openSavePreset);
+  row.appendChild(save);
+
+  const exp = document.createElement('button');
+  exp.className = 'small';
+  exp.textContent = 'Export…';
+  exp.disabled = !d.swapCount;
+  exp.title = d.swapCount ? 'Write a shareable .aq2swap.json file for this map' : 'Add some swaps first';
+  exp.addEventListener('click', exportCurrent);
+  row.appendChild(exp);
+}
+
+function openSavePreset() {
+  const d = state.detail;
+  openModal(`
+    <div class="mhead">
+      <h3>Save preset for <span class="mono">${d.name}</span></h3>
+      <button class="mclose">✕</button>
+    </div>
+    <div class="mbody">
+      <p style="color:var(--dim);margin-bottom:10px">Saves the current ${d.swapCount} swap(s) under a name you can reload anytime.</p>
+      <input id="presetName" class="namefield" maxlength="24" placeholder="e.g. comp, bright, chill…">
+    </div>
+    <div class="mfoot">
+      <button class="primary" id="presetSaveBtn">Save</button>
+    </div>
+  `);
+  const doSave = async () => {
+    const name = $('presetName').value.trim();
+    if (!name) return;
+    closeModal();
+    try {
+      const r = await apiPost('/api/preset/save', { map: d.name, name });
+      state.detail = r.detail;
+      renderPresetRow();
+      toast(`Saved preset "${r.name}"`);
+    } catch (e) { toast('Save failed: ' + e.message, true); }
+  };
+  $('presetSaveBtn').addEventListener('click', doSave);
+  $('presetName').addEventListener('keydown', e => { if (e.key === 'Enter') doSave(); });
+  $('presetName').focus();
+}
+
+async function exportCurrent() {
+  const d = state.detail;
+  try {
+    const r = await apiPost('/api/export', { map: d.name });
+    toast(`Exported! Send this file to your friends: ${r.file}`);
+  } catch (e) {
+    toast('Export failed: ' + e.message, true);
+  }
 }
 
 function renderGrid() {
@@ -555,5 +710,9 @@ $('sortSel').addEventListener('change', renderGrid);
 $('showUtility').addEventListener('change', renderGrid);
 $('skyCard').addEventListener('click', openSkyPicker);
 $('resetMapBtn').addEventListener('click', resetMap);
+$('importFile').addEventListener('change', e => {
+  if (e.target.files.length) importPresetFile(e.target.files[0]);
+  e.target.value = '';
+});
 
 boot();
