@@ -62,7 +62,7 @@ Stack: **Electron** (Node backend + web UI) → portable .exe (~90 MB), and the 
   - Scanner now mirrors the engine's real search path: `action/` layered over `baseaq/`, non-numbered archives > numbered pakN > loose files, plus the shipped soft-link fallbacks — 1804 maps and 20,884 textures found on the mapping install.
   - Swap UI: click texture → picker (stock textures with search, or generated flat/grid visibility textures), skybox picker, per-swap remove, per-map reset, per-map swap badges.
   - Writes `<modDir>/texswap/<map>.cfg` for every map (hard `link` lines + `unlink --all` + `r_reload`), generated textures in `texswap/gen/` (same-extension transcodes: PNG/JPG/TGA/WAL encoders incl. palette quantization + mipmaps), `presets.json`, `hook.cfg`, and one appended line in `autoexec.cfg`.
-  - Proven headlessly with q2proded: exec chain autoexec → hook → map cfg; texture and sky links resolve to our generated files. Remaining: visual confirmation in the live client (map load hook timing + r_reload).
+  - Proven headlessly with q2proded (exec chain autoexec → hook → map cfg; texture and sky links resolve to our generated files) and then **confirmed live in the user's q2pro client on urbanjungle**: flat-grid walls, stone ground, swapped sky, lightmaps intact. One fix was needed along the way: `${cl_mapname}` must be braced in the hook (plain `$cl_mapname.cfg` parses the dot into the macro name and expands empty).
 
 ## Verified engine facts (tested against AQtion q2proded + source, 2026-08-31)
 
@@ -78,14 +78,15 @@ Stack: **Electron** (Node backend + web UI) → portable .exe (~90 MB), and the 
 - **V2 (wow)**: built-in 3D map viewer — renders the actual BSP with lightmaps in the app, click a wall to select its texture, swaps preview instantly without the game running.
 - **V3 (presets+)**: named presets + export/import files; lighting presets (`gl_modulate`, `gl_modulate_world`, `gl_brightness`, `intensity`, …) saved alongside texture presets; hi/low-res toggle (`r_texture_overrides` 15/31) per preset; custom image import; sound swaps; "team pack" bundle sharing; Electron shell + portable .exe.
 - **V4 (the hub)**: the app becomes the everyday AQ2 launcher:
+  *(note: user starts the game via `q2pro.exe`, not the `aqtion.exe` stub — make the launch exe configurable)*
   - **Player setup**: edit nick, skin/model, and common client settings from a friendly UI (writes cvars like `name`/`skin` to cfg)
   - **Server browser**: query master servers / aq2world list + UDP `status` pings → live list of Action servers with map, players, ping; see who's playing where
   - **Connect from app**: click a server → launches `aqtion.exe +connect ip:port` with your chosen install profile, nick, and texture presets already hooked in
 
 ## Still to verify in the live client
 
-1. `cl_beginmapcmd` timing: does the map cfg + `r_reload` apply cleanly on map load, and does `$cl_mapname` stay unexpanded inside the quoted cvar until map start? Fallback: the F9 bind (also installed by hook.cfg).
-2. Visual quality of generated WALs (palette quantization) in low-res mode.
+1. ~~Hook + apply flow~~ ✔ confirmed live 2026-08-31 (F9 path). Still nice to confirm: auto-apply on a map *change* without pressing anything.
+2. Visual quality of generated WALs (palette quantization) in low-res mode (`r_texture_overrides 15`).
 3. Engine source: https://github.com/actionquake (branch `aqtion`)
 
 ## Notes
