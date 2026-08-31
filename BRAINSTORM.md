@@ -77,6 +77,8 @@ Stack: **Electron** (Node backend + web UI) → portable .exe (~90 MB), and the 
 
 - **2026-08-31 — UI design-system overhaul** (user request, done overnight): stylesheet rewritten as one coherent system — token set (4 layered surfaces, one orange accent + semantic good/bad/info, 6/10/14 radii, 2 shadows), exactly two typefaces (Segoe UI Variable + Cascadia Mono/Consolas), uppercase micro-labels, unified 32px controls & button variants (base/primary/danger/small), brand stripe + gradient logo, refined cards (hover lift, swap rings), chip rail for presets, underline tabs, consistent modal chrome with animations, styled scrollbars, toast slide-ins, glass viewer bars. All class names/IDs preserved — zero behavior changes.
 
+- **2026-08-31 — Durable storage**: presets/collections/custom-image masters moved to `%APPDATA%\AQ2TextureSwapper\installs\<slug-hash>\` (per install), with silent migration from the old in-install location. Game-side files (per-map cfgs, gen/, exports) stay in the install and are fully regenerable — after a game reinstall, one click on Install game hook rebuilds everything. First-run UX: prominent setup banner with one-click hook install; in-app 📄 Readme dialog replaced the ?-help; hook chip removed (button only when missing).
+
 ## Verified engine facts (tested against AQtion q2proded + source, 2026-08-31)
 
 - **`softlink` is fallback-only** — it fires only when the requested file does not exist. **`link` (hard) expands before the file search and overrides existing files → the app uses `link`.** Same syntax; `unlink --all` clears only hard links (AQtion's shipped soft links live in a separate list — clean namespace separation).

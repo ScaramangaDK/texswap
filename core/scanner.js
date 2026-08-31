@@ -300,7 +300,7 @@ export class Install {
     if (this.thumbCache.has(key)) return this.thumbCache.get(key);
     let png = null;
     try {
-      const buf = fs.readFileSync(path.join(this.writeDir, 'texswap', relFile));
+      const buf = fs.readFileSync(path.join(this.swaps.dataDir, relFile));
       png = encodePng(resizeRgba(decodeImage(buf, '.png', this.palette), maxDim));
     } catch {
       png = null;

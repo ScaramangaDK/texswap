@@ -1469,10 +1469,11 @@ function openGuide() {
       per-map overrides. Nothing applies until you tick "Apply these lighting settings in the game".</p>
 
       <div class="sectionhead">8 · Safety</div>
-      <p>Everything lives in <code>&lt;install&gt;\\texswap\\</code> plus that one autoexec line —
-      shipped game files are never touched. <b>Reset map</b> reverts a map,
-      <b>Swaps: ON/OFF</b> parks everything at stock, and deleting the
-      <code>texswap</code> folder removes all traces.</p>
+      <p>Game-side files live in <code>&lt;install&gt;\\texswap\\</code> plus one autoexec line —
+      shipped game files are never touched. Your presets, collections and custom images are
+      kept safely in your Windows user profile, so they <b>survive game reinstalls</b>:
+      after a reinstall, just install the hook again and everything regenerates.
+      <b>Reset map</b> reverts a map, <b>Swaps: ON/OFF</b> parks everything at stock.</p>
     </div>
   `);
   const ih = document.getElementById('guideInstallHook');

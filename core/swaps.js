@@ -37,11 +37,37 @@ function cleanCvarMap(obj) {
   return out;
 }
 
+// Per-user data root: presets survive game reinstalls/deletions here.
+function appDataRoot() {
+  const base = process.env.APPDATA || path.join(process.env.USERPROFILE || '.', '.config');
+  return path.join(base, 'AQ2TextureSwapper');
+}
+
 export class SwapStore {
   constructor(install) {
     this.install = install;
     this.dir = path.join(install.writeDir, 'texswap');
-    this.file = path.join(this.dir, 'presets.json');
+
+    // source of truth lives in app-data, keyed per install
+    const key = crypto.createHash('sha1').update(path.resolve(install.root).toLowerCase()).digest('hex').slice(0, 10);
+    const slug = path.basename(install.root).replace(/[^a-z0-9_-]/gi, '_').slice(0, 24) || 'install';
+    this.dataDir = path.join(appDataRoot(), 'installs', `${slug}-${key}`);
+    fs.mkdirSync(path.join(this.dataDir, 'custom'), { recursive: true });
+    this.file = path.join(this.dataDir, 'presets.json');
+
+    // migrate older versions that stored everything inside the install
+    const legacyFile = path.join(this.dir, 'presets.json');
+    if (!fs.existsSync(this.file) && fs.existsSync(legacyFile)) {
+      try {
+        fs.copyFileSync(legacyFile, this.file);
+        const legacyCustom = path.join(this.dir, 'custom');
+        if (fs.existsSync(legacyCustom)) {
+          for (const f of fs.readdirSync(legacyCustom)) {
+            fs.copyFileSync(path.join(legacyCustom, f), path.join(this.dataDir, 'custom', f));
+          }
+        }
+      } catch { /* keep going with whatever we could migrate */ }
+    }
     this.data = { version: 2, enabled: true, lighting: { manage: false, global: {}, extra: '' }, recentFlats: [], favTextures: [], favSets: {}, maps: {} };
     try {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
@@ -86,7 +112,7 @@ export class SwapStore {
     const master = encodePngFile(img);
     const hash = crypto.createHash('sha1').update(master).digest('hex').slice(0, 8);
     const rel = `custom/${sanitize(from)}-${hash}.png`;
-    const abs = path.join(this.dir, rel);
+    const abs = path.join(this.dataDir, rel);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     fs.writeFileSync(abs, master);
     return this.setSwap(mapName, from, { type: 'custom', file: rel, w: img.width, h: img.height });
@@ -274,7 +300,7 @@ export class SwapStore {
     for (const spec of Object.values(swaps)) {
       if (spec.type === 'custom' && spec.file) {
         try {
-          customFiles[spec.file] = fs.readFileSync(path.join(this.dir, spec.file)).toString('base64');
+          customFiles[spec.file] = fs.readFileSync(path.join(this.dataDir, spec.file)).toString('base64');
         } catch { /* file missing; receiver gets a warning on import */ }
       }
     }
@@ -310,7 +336,7 @@ export class SwapStore {
           warnings.push(`custom image for ${from} missing from the file - skipped`);
           continue;
         }
-        const abs = path.join(this.dir, spec.file);
+        const abs = path.join(this.dataDir, spec.file);
         fs.mkdirSync(path.dirname(abs), { recursive: true });
         fs.writeFileSync(abs, Buffer.from(b64, 'base64'));
         swaps[from] = spec;
@@ -368,7 +394,7 @@ export class SwapStore {
     } else if (spec.type === 'custom') {
       fileBase = 'custom-' + path.basename(spec.file, '.png');
       make = () => {
-        const buf = fs.readFileSync(path.join(this.dir, spec.file));
+        const buf = fs.readFileSync(path.join(this.dataDir, spec.file));
         return encodeAs(ext, decodeImage(buf, '.png', this.install.palette), this.install.palette, fileBase);
       };
     } else {
