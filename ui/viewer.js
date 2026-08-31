@@ -60,11 +60,12 @@ function applyGroupLook(mesh, detail) {
 // quarter-turns (q) and mirroring (mx) because three samples cube faces in
 // the GL convention while Q2 faces are straight photos; calibrated against
 // cloud-seam continuity (see AQVskyRot for live tuning).
-// derived from id's st_to_vec tables vs GL cube sampling: sides mirror,
-// the caps also rotate (up transposes, dn anti-transposes)
+// derived from id's st_to_vec tables vs GL cube sampling, then yawed 180
+// against the real game (user-verified sun position on mak_sunset1_):
+// sides mirror, the caps also rotate
 const SKY_XFORM = {
   rt: { q: 0, mx: true }, lf: { q: 0, mx: true },
-  up: { q: 1, mx: true }, dn: { q: 3, mx: true },
+  up: { q: 3, mx: true }, dn: { q: 1, mx: true },
   ft: { q: 0, mx: true }, bk: { q: 0, mx: true },
 };
 
@@ -80,10 +81,12 @@ function buildSkyCube(imgs, xf) {
     g.drawImage(img, -s / 2, -s / 2, s, s);
     return cv;
   };
+  // 180-degree yaw: lf/rt and bk/ft fill each other's cube slots (the GL
+  // per-face axes flip the horizontal automatically, keeping seams intact)
   const cube = new THREE.CubeTexture([
-    prep(imgs.rt, xf.rt), prep(imgs.lf, xf.lf),
+    prep(imgs.lf, xf.lf), prep(imgs.rt, xf.rt),
     prep(imgs.up, xf.up), prep(imgs.dn, xf.dn),
-    prep(imgs.ft, xf.ft), prep(imgs.bk, xf.bk),
+    prep(imgs.bk, xf.bk), prep(imgs.ft, xf.ft),
   ]);
   cube.needsUpdate = true;
   cube.colorSpace = THREE.SRGBColorSpace;
