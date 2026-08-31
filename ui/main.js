@@ -789,7 +789,7 @@ const LIGHT_CVARS = [
   { key: 'gl_modulate', label: 'Light boost (overall)', hint: '1 = stock, 2–3 = common comp values' },
   { key: 'gl_modulate_world', label: 'Light boost: world', hint: 'world geometry only' },
   { key: 'gl_modulate_entities', label: 'Light boost: models', hint: 'players, items, weapons' },
-  { key: 'gl_brightness', label: 'Brightness (additive)', hint: 'default ~0.01; higher lifts dark areas' },
+  { key: 'gl_brightness', label: 'Brightness (additive)', hint: 'default ~0.1; higher lifts dark areas' },
   { key: 'intensity', label: 'Texture intensity', hint: 'texture brightness multiplier' },
   { key: 'gl_saturation', label: 'Texture saturation', hint: '1 = full color, 0 = grayscale' },
   { key: 'gl_coloredlightmaps', label: 'Colored lightmaps', hint: '1 = colored lights, 0 = white' },
