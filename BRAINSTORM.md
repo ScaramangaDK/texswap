@@ -73,6 +73,8 @@ Stack: **Electron** (Node backend + web UI) → portable .exe (~90 MB), and the 
 
 - **2026-08-31 — Custom images + invisible swaps** (user request, generalized to all textures): "Your image" tab in the picker uploads png/jpg/tga (stored as master PNG in `texswap/custom/`, transcoded per format like any swap; embedded base64 in export files so sharing works); "Make invisible" swaps to a fully transparent png/tga — hi-res-path only (WAL has no alpha; low-res mode keeps the original gracefully), flagged experimental pending in-game confirmation on opaque surfaces. Recents/favorites/low-res-preview shipped same day.
 
+- **2026-08-31 — Favorite collections** (user request, aimed at mapmakers): named texture sets ("great bricks", "Makkons best metal", …) on top of the ★ All-favorites list. Any texture joins any number of collections via a ＋ popup in the picker; a dropdown filters the picker to a collection; adding to a collection auto-stars (All favorites stays the superset); collections deletable. Future synergy: include collections in team-pack sharing.
+
 ## Verified engine facts (tested against AQtion q2proded + source, 2026-08-31)
 
 - **`softlink` is fallback-only** — it fires only when the requested file does not exist. **`link` (hard) expands before the file search and overrides existing files → the app uses `link`.** Same syntax; `unlink --all` clears only hard links (AQtion's shipped soft links live in a separate list — clean namespace separation).
