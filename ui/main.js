@@ -1362,10 +1362,11 @@ async function openMissingFix() {
       the app shows it on every missing texture, and with the fix enabled it is applied
       <b>in game across all maps</b> too, so broken maps get a clean uniform look.
       Textures you swap yourself always win over this.</p>
-      <p><label><input type="checkbox" id="mfEnabled"> <b>Apply in game across all maps</b></label></p>
       <div class="stylerow" id="mfStyles"></div>
       <div class="flatrow">
         <img id="mfPreview" class="flatpreview" alt="preview">
+        <label class="mfenable" title="Without this, the style only shows in the app - the game is untouched">
+          <input type="checkbox" id="mfEnabled"> Apply in game (all maps)</label>
         <button class="primary" id="mfSave">Save</button>
       </div>
       <div class="sectionhead">Base color</div>
@@ -1452,9 +1453,11 @@ async function openMissingFix() {
       bustThumbs();
       renderHook();
       if (state.detail) await selectMap(state.detail.name);
-      toast(r.missingFix.enabled
-        ? `Missing-texture fix is on - ${(r.written || []).length} cfg(s) updated, F9 in game to see it`
-        : 'Missing-texture style saved (in-game fix is off)');
+      if (r.missingFix.enabled) {
+        toast(`Missing-texture fix is ON - ${(r.written || []).length} cfg(s) updated, F9 in game to see it`);
+      } else {
+        toast('Style saved - but the in-game fix is OFF. Tick "Apply in game" to fix the maps.', true);
+      }
     } catch (e) {
       toast('Could not save: ' + e.message, true);
     }

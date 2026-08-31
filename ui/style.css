@@ -814,6 +814,19 @@ footer code { color: var(--accent-hi); font-family: var(--mono); }
 .palswatch:hover { border-color: var(--accent-hi); transform: scale(1.25); }
 .palswatch.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
 
+.mfenable {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-s);
+  color: var(--accent-hi);
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .favbtn {
   position: absolute;
   top: 4px;
