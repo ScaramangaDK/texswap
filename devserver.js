@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getInstall } from './core/scanner.js';
 import { flatImage, parseColor } from './core/gen.js';
-import { encodePng, resizeRgba } from './core/thumbs.js';
+import { encodePng } from './core/thumbs.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const UI_DIR = path.join(ROOT, 'ui');
@@ -190,8 +190,10 @@ async function handleApi(req, url, res) {
       if (q.get('tex')) png = inst.thumbPng('textures/' + q.get('tex'), size);
       else if (q.get('sky')) png = inst.skyThumbPng(q.get('sky'), size);
       else if (q.get('flat')) {
+        // generate at the requested size directly - resampling a fixed-size
+        // pattern makes thin grid lines look broken
         try {
-          png = encodePng(resizeRgba(flatImage(q.get('flat'), q.get('style') || 'solid'), size));
+          png = encodePng(flatImage(q.get('flat'), q.get('style') || 'solid', size));
         } catch { png = null; }
       } else return json(res, 400, { error: 'missing ?tex=, ?sky= or ?flat=' });
       if (!png) { res.writeHead(404); return res.end(); }
