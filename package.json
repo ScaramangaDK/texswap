@@ -30,7 +30,9 @@
       "!ui/ingameviewer.png",
       "!ui/maplighting.png",
       "!ui/skybox.png",
-      "!ui/transframe.png"
+      "!ui/transframe.png",
+      "!ui/frame3to1.png",
+      "!ui/frame5to1.png"
     ],
     "win": {
       "target": "portable",
