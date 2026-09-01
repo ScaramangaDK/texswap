@@ -42,17 +42,20 @@
           </div>
           <div class="headactions">
             <button id="view3dBtn" class="atile" title="Fly through the map with your swaps applied — click a wall to swap its texture">
-              <span class="aticon">🧊</span><span class="atlabel">3D view</span>
+              <img class="atimg" src="btn-3dview.png" alt="3D viewer">
             </button>
             <button id="gameBtn" class="atile" title="Launch the real game on this map — perfect lighting, your cfg, presets auto-apply">
-              <span class="aticon">🎮</span><span class="atlabel">In game</span>
+              <img class="atimg" src="btn-ingame.png" alt="In game viewer">
             </button>
             <button id="mapLightBtn" class="atile" title="Per-map lighting override">
-              <span class="aticon">📍</span><span class="atlabel">Lighting</span>
+              <img class="atimg" src="btn-lighting.png" alt="Map lighting">
             </button>
-            <button class="atile skytile" id="skyCard" title="Click to change the skybox">
-              <img id="skyThumb" alt="skybox">
-              <span class="atlabel"><span id="skyName"></span><span id="skySwapInfo" class="skyswap"></span></span>
+            <button class="atile" id="skyCard" title="Click to change the skybox">
+              <img class="atimg" src="btn-skybox.png" alt="Skybox">
+            </button>
+            <button class="atile skyprev" id="skyPrev" title="Current skybox — click to change it">
+              <img id="skyThumb" alt="current skybox">
+              <span class="skyprevname"><span id="skyName"></span><span id="skySwapInfo" class="skyswap"></span></span>
             </button>
           </div>
         </div>

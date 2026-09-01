@@ -25,7 +25,11 @@
       "!ui/logo2.png",
       "!ui/logo2-ui.png",
       "!ui/texswaplogo.png",
-      "!ui/thumbnail.png"
+      "!ui/thumbnail.png",
+      "!ui/3dviewer.png",
+      "!ui/ingameviewer.png",
+      "!ui/maplighting.png",
+      "!ui/skybox.png"
     ],
     "win": {
       "target": "portable",

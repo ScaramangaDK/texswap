@@ -487,46 +487,75 @@ h1 { font-size: 16px; font-weight: 650; letter-spacing: 0.01em; }
 
 .headactions { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; }
 
-/* square action tiles - placeholder icons until the 1:1 art lands */
+/* square action tiles - the art carries its own metal frame and label */
 .atile {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 84px;
-  min-height: 78px;
-  padding: 8px 6px;
-  background: var(--bg2);
-  border: 1px solid var(--steel-line);
-  border-radius: var(--r-m);
-  box-shadow: var(--plate);
+  position: relative;
+  width: 96px;
+  height: 96px;
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+  transition: transform 0.13s ease, filter 0.13s ease;
 }
 .atile:hover {
-  border-color: var(--accent);
-  background: var(--bg3);
+  background: none;
+  border: none;
+  transform: translateY(-2px);
+  filter: brightness(1.12) drop-shadow(0 0 10px rgba(255, 140, 26, 0.45));
+}
+.atile:active { transform: translateY(0); }
+.atile .atimg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.atile .atdot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 9px;
+  height: 9px;
+}
+/* current-skybox preview square, same footprint as the art tiles */
+.atile.skyprev {
+  border: 1px solid var(--steel-line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--bg2);
+  box-shadow: var(--plate);
+}
+.atile.skyprev:hover {
+  border: 1px solid var(--accent);
   box-shadow: var(--plate), var(--glow-soft);
+  filter: none;
 }
-.atile .aticon { font-size: 26px; line-height: 1; position: relative; }
-.atile .aticon .dot { position: absolute; top: -2px; right: -8px; }
-.atile .atlabel {
-  font-size: 10.5px;
-  font-weight: 600;
-  color: var(--dim);
-  letter-spacing: 0.03em;
-  text-align: center;
-  line-height: 1.25;
-}
-.atile:hover .atlabel { color: var(--accent-hi); }
-.atile.skytile img {
-  width: 40px;
-  height: 40px;
+.atile.skyprev img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
-  border-radius: var(--r-s);
-  background: var(--checker);
   image-rendering: pixelated;
 }
-.atile.skytile #skyName { display: block; font-family: var(--mono); font-size: 9.5px; max-width: 76px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skyprevname {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 3px 5px;
+  background: rgba(14, 17, 22, 0.82);
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+.skyprevname .skyswap { display: inline; margin-left: 4px; }
 
 .skycard {
   display: flex;

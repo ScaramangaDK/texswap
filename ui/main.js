@@ -475,7 +475,7 @@ function renderDetail() {
   resetBtn.textContent = `Reset map (${d.swapCount})`;
 
   const lightBtn = $('mapLightBtn');
-  lightBtn.innerHTML = `<span class="aticon">📍${d.lighting ? '<span class="dot"></span>' : ''}</span><span class="atlabel">Lighting</span>`;
+  lightBtn.innerHTML = `<img class="atimg" src="btn-lighting.png" alt="Map lighting">${d.lighting ? '<span class="dot atdot"></span>' : ''}`;
   lightBtn.title = d.lighting
     ? `${d.name} has its own lighting override - click to edit`
     : `Override the global lighting on ${d.name} only`;
@@ -1893,6 +1893,7 @@ $('lowRes').addEventListener('change', () => {
   if (state.activeMap) selectMap(state.activeMap);
 });
 $('skyCard').addEventListener('click', openSkyPicker);
+$('skyPrev').addEventListener('click', openSkyPicker);
 $('resetMapBtn').addEventListener('click', resetMap);
 $('mapLightBtn').addEventListener('click', () => openLighting('map'));
 $('importFile').addEventListener('change', e => {
