@@ -38,7 +38,6 @@
             <h2 id="mapName"></h2>
             <span id="mapTitle" class="subtitle"></span>
             <span id="mapMeta" class="meta"></span>
-            <button id="resetMapBtn" class="danger small hidden">Reset map</button>
           </div>
           <div class="headactions">
             <button id="view3dBtn" class="atile" title="Fly through the map with your swaps applied — click a wall to swap its texture">
@@ -58,6 +57,7 @@
                 <span class="skyprevname"><span id="skyName"></span><span id="skySwapInfo" class="skyswap"></span></span>
               </span>
             </button>
+            <button id="resetMapBtn" class="danger small resetbtn hidden">Reset map</button>
           </div>
         </div>
         <div id="presetRow" class="presetrow"></div>
@@ -102,6 +102,7 @@
         <div class="rphead">Help</div>
         <div class="rpbody">
           <button id="guideBtn" title="Setup and how to use the program">📄 Readme</button>
+          <button id="aboutBtn2" title="About TexSwap - what it is, who made it, how to get in touch">ℹ️ About</button>
         </div>
       </div>
     </aside>
@@ -109,7 +110,7 @@
 
   <footer>
     <span>Click any texture to replace it — changes are written as <code>link</code> cfgs the game applies on map load.</span>
-    <span class="credit">TexSwap · by <b>Ralle</b></span>
+    <span class="credit"><span id="verInfo">TexSwap</span> · by <b>Ralle</b></span>
   </footer>
   </div>
 

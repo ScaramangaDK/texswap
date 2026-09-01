@@ -431,7 +431,27 @@ h1 { font-size: 16px; font-weight: 650; letter-spacing: 0.01em; }
   flex-direction: column;
   gap: 8px;
 }
-.rpbody button { width: 100%; text-align: left; }
+.rpbody button {
+  width: 100%;
+  text-align: left;
+  /* Ralle's 5:1 frame art as the button chrome (9-slice) */
+  border: 9px solid transparent;
+  border-image: url('btn-frame5.png') 78 fill / 9px stretch;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  padding: 4px 8px;
+  font-weight: 600;
+}
+.rpbody button:hover {
+  border-image: url('btn-frame5.png') 78 fill / 9px stretch;
+  background: none;
+  filter: brightness(1.25) drop-shadow(0 0 6px rgba(255, 140, 26, 0.35));
+  transform: none;
+}
+.rpbody button.off {
+  filter: saturate(0.4) brightness(0.8);
+}
 .rpbody input { width: 100%; font-family: var(--mono); font-size: 11.5px; }
 .rprow { display: flex; gap: 8px; }
 .rprow > * { flex: 1; min-width: 0; }
@@ -471,10 +491,11 @@ h1 { font-size: 16px; font-weight: 650; letter-spacing: 0.01em; }
 }
 .maptitle h2 {
   display: inline;
-  font-size: 21px;
+  font-size: 25px;
   font-weight: 650;
   margin-right: 10px;
   letter-spacing: 0.01em;
+  text-transform: capitalize;
 }
 .subtitle { color: var(--accent-hi); font-size: 13.5px; font-weight: 600; }
 .meta {
@@ -485,7 +506,8 @@ h1 { font-size: 16px; font-weight: 650; letter-spacing: 0.01em; }
   font-family: var(--mono);
 }
 
-.headactions { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; }
+.headactions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.headactions .resetbtn { align-self: center; margin-left: 4px; }
 
 /* square action tiles - the art carries its own metal frame and label */
 .atile {

@@ -11,6 +11,10 @@ import { encodePng } from './core/thumbs.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const UI_DIR = path.join(ROOT, 'ui');
+const APP_VERSION = (() => {
+  try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version; }
+  catch { return ''; }
+})();
 const PORT = Number(process.env.PORT || 5892);
 const DEFAULT_DIR = 'C:\\AQ2mapping\\AQ2';
 
@@ -42,6 +46,7 @@ function readBody(req) {
 
 function scanResult(inst) {
   return {
+    version: APP_VERSION,
     root: inst.root,
     gameDirs: inst.gameDirs,
     writeDir: inst.writeDir,

@@ -206,6 +206,7 @@ async function rescan(refresh) {
   renderMapList();
   renderHook();
   $('mapSearch').placeholder = `Search ${state.scan.maps.length} maps…`;
+  if (state.scan.version) $('verInfo').textContent = 'TexSwap v' + state.scan.version;
   $('empty').firstElementChild.textContent =
     `${state.scan.maps.length} maps in ${state.scan.gameDirs.join(' + ')} — pick one on the left.`;
   if (state.activeMap && state.scan.maps.some(m => m.name === state.activeMap)) {
@@ -1862,20 +1863,37 @@ function openGuide() {
   if (ih) ih.addEventListener('click', () => { closeModal(); installHook(); });
 }
 
-$('aboutBtn').addEventListener('click', () => {
+function openAbout() {
+  const ver = state.scan && state.scan.version ? 'v' + state.scan.version : '';
   openModal(`
     <div class="mhead">
-      <h3>About</h3>
+      <h3>About TexSwap</h3>
       <button class="mclose">✕</button>
     </div>
     <div class="mbody" style="text-align:center">
       <img src="texswaplogo-ui.png" alt="TexSwap" style="width:min(460px,86%);border-radius:14px;margin:6px 0 14px">
-      <p style="font-size:15px;font-weight:650">TexSwap <span style="color:var(--faint);font-weight:400">· by Ralle</span></p>
-      <p class="mnote" style="margin-top:4px">Restyle any Quake 2 or AQ2/AQtion map — swap textures &amp; skyboxes, tune lighting,
-      save per-map presets and share them with friends. Powered by q2pro's <span class="mono">link</span> command.</p>
+      <p style="font-size:15px;font-weight:650">TexSwap ${ver} <span style="color:var(--faint);font-weight:400">· by Ralle</span></p>
+      <p class="mnote" style="margin-top:6px;text-align:left">
+      <b>What it is:</b> a texture swapper for Quake 2 and Action Quake 2 (AQtion). Restyle any map for
+      gameplay — swap textures and skyboxes, tune lighting, fix missing textures, save per-map presets
+      and share them with friends as small files. Everything applies in the real game automatically on
+      map load, powered by q2pro's <span class="mono">link</span> command; nothing the game ships with
+      is ever modified.</p>
+      <p class="mnote" style="text-align:left">
+      <b>How it's made:</b> a small Node.js server with a hand-written web UI (no frameworks) and a
+      three.js 3D map viewer, wrapped in Electron as one portable exe. Designed and built by Ralle
+      together with AI — the artwork too.</p>
+      <p class="mnote" style="text-align:left">
+      <b>About Ralle:</b> long-time Action Quake 2 mapper — the Nostromo map series and the
+      ralle_colors texture palette among others. TexSwap grew out of wanting clean, high-visibility
+      maps without giving up the originals.</p>
+      <p class="mnote" style="text-align:left">
+      <b>Contact:</b> mail <a href="mailto:smarallen@gmail.com" style="color:var(--accent-hi)">smarallen@gmail.com</a></p>
     </div>
   `);
-});
+}
+$('aboutBtn').addEventListener('click', openAbout);
+$('aboutBtn2').addEventListener('click', openAbout);
 $('browseBtn').addEventListener('click', () => openBrowser());
 $('guideBtn').addEventListener('click', openGuide);
 $('setupHookBtn').addEventListener('click', installHook);
