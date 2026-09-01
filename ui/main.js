@@ -1893,7 +1893,6 @@ $('lowRes').addEventListener('change', () => {
   if (state.activeMap) selectMap(state.activeMap);
 });
 $('skyCard').addEventListener('click', openSkyPicker);
-$('skyPrev').addEventListener('click', openSkyPicker);
 $('resetMapBtn').addEventListener('click', resetMap);
 $('mapLightBtn').addEventListener('click', () => openLighting('map'));
 $('importFile').addEventListener('change', e => {
