@@ -1,4 +1,4 @@
-﻿# AQ2 Texture Swapper
+﻿# Ralle's Texture Swapper
 
 Restyle AQ2/AQtion map textures for gameplay: browse every texture a map uses,
 swap them via q2pro's `softlink` command, preview the result, and save per-map
