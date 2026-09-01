@@ -431,30 +431,7 @@ h1 { font-size: 16px; font-weight: 650; letter-spacing: 0.01em; }
   flex-direction: column;
   gap: 8px;
 }
-.rpbody button {
-  width: 100%;
-  min-height: 54px;
-  display: flex;
-  align-items: center;
-  text-align: left;
-  /* Ralle's 5:1 frame art, whole and unsliced - the button matches its aspect */
-  border: none;
-  border-radius: 0;
-  background: url('btn-frame5.png') center / 100% 100% no-repeat;
-  box-shadow: none;
-  padding: 0 22px;
-  font-weight: 600;
-  font-size: 12.5px;
-}
-.rpbody button:hover {
-  background: url('btn-frame5.png') center / 100% 100% no-repeat;
-  border: none;
-  filter: brightness(1.22) drop-shadow(0 0 7px rgba(255, 140, 26, 0.4));
-  transform: none;
-}
-.rpbody button.off {
-  filter: saturate(0.35) brightness(0.75);
-}
+.rpbody button { width: 100%; text-align: left; }
 .rpbody input { width: 100%; font-family: var(--mono); font-size: 11.5px; }
 .rprow { display: flex; gap: 8px; }
 .rprow > * { flex: 1; min-width: 0; }
@@ -511,31 +488,8 @@ h1 { font-size: 16px; font-weight: 650; letter-spacing: 0.01em; }
 
 .headactions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
-/* Reset map as a 1:1 tile wearing the frame art, danger-red inside */
-.atile.resettile {
-  background: url('btn-frame.png') center / 100% 100% no-repeat;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 15%;
-}
-.atile.resettile:hover {
-  background: url('btn-frame.png') center / 100% 100% no-repeat;
-  filter: brightness(1.15) drop-shadow(0 0 10px rgba(255, 107, 107, 0.45));
-}
-.resettile .resetinner {
-  font-size: 12px;
-  font-weight: 700;
-  color: #ff8585;
-  text-align: center;
-  line-height: 1.35;
-}
-.resettile .resetinner b {
-  display: block;
-  font-size: 11px;
-  color: var(--dim);
-  font-weight: 600;
-}
+/* Reset map lives at the far right of the filter/sort controls row */
+.controls .resetlink { margin-left: auto; }
 
 /* square action tiles - the art carries its own metal frame and label */
 .atile {

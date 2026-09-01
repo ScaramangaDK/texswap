@@ -473,7 +473,7 @@ function renderDetail() {
   const resetBtn = $('resetMapBtn');
   const hasWork = d.swapCount > 0 || d.lighting;
   resetBtn.classList.toggle('hidden', !hasWork);
-  resetBtn.innerHTML = `<span class="resetinner">Reset map<b>(${d.swapCount})</b></span>`;
+  resetBtn.textContent = `Reset map (${d.swapCount})`;
 
   const lightBtn = $('mapLightBtn');
   lightBtn.innerHTML = `<img class="atimg" src="btn-lighting.png" alt="Map lighting">${d.lighting ? '<span class="dot atdot"></span>' : ''}`;
