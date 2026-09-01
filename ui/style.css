@@ -519,34 +519,34 @@ h1 { font-size: 16px; font-weight: 650; letter-spacing: 0.01em; }
   width: 9px;
   height: 9px;
 }
-/* current-skybox preview square, same footprint as the art tiles */
-.atile.skyprev {
-  border: 1px solid var(--steel-line);
-  border-radius: 14px;
-  overflow: hidden;
+/* current-skybox preview: the sky thumb sits inside Ralle's transparent
+   frame art (window measured at ~10% insets), so it matches the tile set */
+.atile.skyprev #skyThumb {
+  position: absolute;
+  left: 9.5%;
+  top: 9.2%;
+  width: 81%;
+  height: 82.4%;
+  border-radius: 7px;
+  object-fit: cover;
+  image-rendering: pixelated;
   background: var(--bg2);
-  box-shadow: var(--plate);
 }
-.atile.skyprev:hover {
-  border: 1px solid var(--accent);
-  box-shadow: var(--plate), var(--glow-soft);
-  filter: none;
-}
-.atile.skyprev img {
+.atile.skyprev .atframe {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  image-rendering: pixelated;
+  pointer-events: none;
 }
 .skyprevname {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 3px 5px;
+  left: 12%;
+  right: 12%;
+  bottom: 11.5%;
+  padding: 2px 4px;
   background: rgba(14, 17, 22, 0.82);
+  border-radius: 0 0 5px 5px;
   font-family: var(--mono);
   font-size: 9px;
   color: var(--text);
