@@ -1880,13 +1880,18 @@ function openAbout() {
       map load, powered by q2pro's <span class="mono">link</span> command; nothing the game ships with
       is ever modified.</p>
       <p class="mnote" style="text-align:left">
+      <b>Who it's for:</b> players who love making their own custom versions of their favorite maps —
+      and just as much a tool for mapmakers: instant overview of every texture a map uses, and a fast
+      way to test different texture designs on the fly, in the 3D viewer or straight in the game.</p>
+      <p class="mnote" style="text-align:left">
       <b>How it's made:</b> a small Node.js server with a hand-written web UI (no frameworks) and a
       three.js 3D map viewer, wrapped in Electron as one portable exe. Designed and built by Ralle
       together with AI — the artwork too.</p>
       <p class="mnote" style="text-align:left">
-      <b>About Ralle:</b> long-time Action Quake 2 mapper — the Nostromo map series and the
-      ralle_colors texture palette among others. TexSwap grew out of wanting clean, high-visibility
-      maps without giving up the originals.</p>
+      <b>About Ralle:</b> veteran AQ2 mapper and player — creator of the maps
+      <span class="mono">TempleofDoom</span> and <span class="mono">Kingslanding</span>, the
+      ralle_colors texture palette, and a pile of AQ2 fan content over the years: songs, videos and
+      more. In the pipeline: the <span class="mono">Nostromo</span> map.</p>
       <p class="mnote" style="text-align:left">
       <b>Contact:</b> mail <a href="mailto:smarallen@hotmail.com" style="color:var(--accent-hi)">smarallen@hotmail.com</a>
       &nbsp;·&nbsp; Discord: <span class="mono" style="color:var(--accent-hi)">smarallen</span></p>
