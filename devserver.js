@@ -358,7 +358,7 @@ async function handleApi(req, url, res) {
 
 server.on('error', e => {
   if (e.code === 'EADDRINUSE') {
-    console.log(`Ralle's Texture Swapper is already running - just open http://127.0.0.1:${PORT}`);
+    console.log(`TexSwap is already running - just open http://127.0.0.1:${PORT}`);
     // inside Electron, keep the window alive and reuse the running server
     if (!process.env.AQ2TS_ELECTRON) process.exit(0);
     return;
@@ -367,6 +367,6 @@ server.on('error', e => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`Ralle's Texture Swapper dev server on http://127.0.0.1:${PORT}`);
+  console.log(`TexSwap dev server on http://127.0.0.1:${PORT}`);
   console.log(`Default install: ${DEFAULT_DIR}`);
 });

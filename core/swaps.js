@@ -535,7 +535,7 @@ export class SwapStore {
       if (map.error) continue;
       const entry = this.enabled ? this.data.maps[map.name] : null;
       const lines = [
-        `// Ralle's Texture Swapper - auto-generated for map "${map.name}", do not edit`,
+        `// TexSwap - auto-generated for map "${map.name}", do not edit`,
         'unlink --all',
       ];
       let active = 0;
@@ -611,7 +611,7 @@ export class SwapStore {
     }
 
     const hook = [
-      '// Ralle's Texture Swapper hook - exec\'d from autoexec.cfg',
+      '// TexSwap hook - exec\'d from autoexec.cfg',
       '// Applies this map\'s texture preset every time a map starts,',
       '// and binds F9 to re-apply instantly while playing.',
       // ${...} braces are required: "$cl_mapname.cfg" would parse the macro
@@ -648,7 +648,7 @@ export class SwapStore {
       let text = '';
       try { text = fs.readFileSync(autoexec, 'utf8'); } catch { /* creating */ }
       if (text.length && !text.endsWith('\n')) text += '\n';
-      text += `${HOOK_LINE}   // added by Ralle's Texture Swapper\n`;
+      text += `${HOOK_LINE}   // added by TexSwap\n`;
       fs.writeFileSync(autoexec, text);
     }
     this.materialize();

@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Ralle's Texture Swapper</title>
+<title>TexSwap</title>
 <style>
   html, body {
     margin: 0;
@@ -68,6 +68,13 @@
     border-radius: 2px;
     animation: slide 1.2s ease-in-out infinite alternate;
   }
+  .credit {
+    margin-top: 18px;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    color: #5f6b82;
+  }
+  .credit b { color: #ffa94d; font-weight: 600; }
   @keyframes slide {
     from { transform: translateX(-60%); }
     to { transform: translateX(340%); }
@@ -77,9 +84,10 @@
 <body>
   <img id="bg" src="loading.png" alt="" onerror="this.remove(); document.body.classList.add('nobg')">
   <div class="wrap">
-    <img src="logo2-ui.png" alt="Ralle's Texture Swapper">
+    <img src="logo2-ui.png" alt="TexSwap">
     <div class="msg dots">Starting up</div>
     <div class="bar"><span></span></div>
+    <div class="credit">by <b>Ralle</b></div>
   </div>
 </body>
 </html>
