@@ -1895,6 +1895,8 @@ function openAbout() {
       <p class="mnote" style="text-align:left">
       <b>Contact:</b> mail <a href="mailto:smarallen@hotmail.com" style="color:var(--accent-hi)">smarallen@hotmail.com</a>
       &nbsp;·&nbsp; Discord: <span class="mono" style="color:var(--accent-hi)">smarallen</span></p>
+      <p class="mnote" style="text-align:left">
+      <b>Latest version:</b> <a href="https://github.com/ScaramangaDK/texswap/releases/latest" target="_blank" style="color:var(--accent-hi)">github.com/ScaramangaDK/texswap/releases</a></p>
     </div>
   `);
 }
