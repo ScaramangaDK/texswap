@@ -1888,7 +1888,8 @@ function openAbout() {
       ralle_colors texture palette among others. TexSwap grew out of wanting clean, high-visibility
       maps without giving up the originals.</p>
       <p class="mnote" style="text-align:left">
-      <b>Contact:</b> mail <a href="mailto:smarallen@gmail.com" style="color:var(--accent-hi)">smarallen@gmail.com</a></p>
+      <b>Contact:</b> mail <a href="mailto:smarallen@hotmail.com" style="color:var(--accent-hi)">smarallen@hotmail.com</a>
+      &nbsp;·&nbsp; Discord: <span class="mono" style="color:var(--accent-hi)">smarallen</span></p>
     </div>
   `);
 }
