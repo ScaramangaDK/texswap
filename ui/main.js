@@ -252,10 +252,9 @@ function renderGameBadge() {
 
 function renderHook() {
   const area = $('hookArea');
+  const share = $('shareArea');
   area.textContent = '';
-  area.style.display = 'flex';
-  area.style.gap = '8px';
-  area.style.alignItems = 'center';
+  share.textContent = '';
   if (!state.scan) return;
 
   $('setupBanner').classList.toggle('hidden', state.scan.hook.installed);
@@ -295,16 +294,16 @@ function renderHook() {
   area.appendChild(miss);
 
   const imp = document.createElement('button');
-  imp.textContent = 'Import preset…';
+  imp.textContent = '📥 Import preset…';
   imp.title = 'Load a .aq2swap.json or .aq2pack.json file from a friend';
   imp.addEventListener('click', () => $('importFile').click());
-  area.appendChild(imp);
+  share.appendChild(imp);
 
   const pack = document.createElement('button');
   pack.textContent = '🎁 Export pack…';
   pack.title = 'Bundle the texture swaps of every map you have customized into one shareable file (sky and lighting stay personal)';
   pack.addEventListener('click', openExportPack);
-  area.appendChild(pack);
+  share.appendChild(pack);
 }
 
 async function openExportPack() {
@@ -476,7 +475,7 @@ function renderDetail() {
   resetBtn.textContent = `Reset map (${d.swapCount})`;
 
   const lightBtn = $('mapLightBtn');
-  lightBtn.innerHTML = d.lighting ? '📍 Map lighting<span class="dot"></span>' : '📍 Map lighting';
+  lightBtn.innerHTML = `<span class="aticon">📍${d.lighting ? '<span class="dot"></span>' : ''}</span><span class="atlabel">Lighting</span>`;
   lightBtn.title = d.lighting
     ? `${d.name} has its own lighting override - click to edit`
     : `Override the global lighting on ${d.name} only`;
