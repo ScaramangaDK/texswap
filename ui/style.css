@@ -510,7 +510,32 @@ h1 { font-size: 16px; font-weight: 650; letter-spacing: 0.01em; }
 }
 
 .headactions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.headactions .resetbtn { align-self: center; margin-left: 4px; }
+
+/* Reset map as a 1:1 tile wearing the frame art, danger-red inside */
+.atile.resettile {
+  background: url('btn-frame.png') center / 100% 100% no-repeat;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 15%;
+}
+.atile.resettile:hover {
+  background: url('btn-frame.png') center / 100% 100% no-repeat;
+  filter: brightness(1.15) drop-shadow(0 0 10px rgba(255, 107, 107, 0.45));
+}
+.resettile .resetinner {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ff8585;
+  text-align: center;
+  line-height: 1.35;
+}
+.resettile .resetinner b {
+  display: block;
+  font-size: 11px;
+  color: var(--dim);
+  font-weight: 600;
+}
 
 /* square action tiles - the art carries its own metal frame and label */
 .atile {
