@@ -23,6 +23,8 @@
       "ui/**",
       "!ui/logo.png",
       "!ui/logo2.png",
+      "!ui/logo2-ui.png",
+      "!ui/texswaplogo.png",
       "!ui/thumbnail.png"
     ],
     "win": {
