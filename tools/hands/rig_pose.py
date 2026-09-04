@@ -50,6 +50,9 @@ if MD2:
         R = Vt.T @ np.diag([1, 1, d]) @ U.T
         return R, cq - R @ cp
     gun_motion = [kabsch(frames_np[REF][gun_vidx], frames_np[f][gun_vidx]) for f in range(len(frames_np))]
+    old_arm_vidx = sorted({t[k] for t in md2['tris'] if t not in gun_tris for k in range(3)})
+    arm_motion = [kabsch(frames_np[REF][old_arm_vidx], frames_np[f][old_arm_vidx]) for f in range(len(frames_np))]
+    frame_names = [f[0] for f in md2['frames']]
     gun = dict(tris=gun_tris, frames=frames_np)
 
 # ---------------- rig one arm ----------------
@@ -122,13 +125,21 @@ def build_arm(side):
     curls = P.get('curl', {})
     for fi in range(1, 6):
         angs = curls.get(str(fi), [0, 0, 0])
-        if fi == 1 and P.get('thumb_along'):
-            # lay the thumb along the index finger: rotate the thumb base about the palm normal (local Z) toward the index direction
+        if fi == 1 and P.get('thumb_adduct'):
+            b0 = pb['f1_0']; b0.rotation_euler = (0, 0, -math.radians(P['thumb_adduct']))   # + = toward the fingers; bpy.context.view_layer.update()
+        if fi == 1 and (P.get('thumb_along') or P.get('thumb_dir')):
+            # rotate the thumb base about the palm normal (local Z) so it points along the index finger or a given world direction
             b0 = pb['f1_0']; idx = pb['f2_0']
-            t_dir = unit(b0.tail - b0.head); i_dir = unit(idx.tail - idx.head)
-            n = unit(R @ palm_r)
-            a = math.atan2(t_dir.cross(i_dir).dot(n), t_dir.dot(i_dir))
-            b0.rotation_euler = (0, 0, a)
+            t_dir = unit(b0.tail - b0.head); n = unit(R @ palm_r)
+            if P.get('thumb_dir'):
+                # full 3D: point the thumb base along a world direction (may leave the palm plane, e.g. across a pistol grip's backstrap)
+                q = t_dir.rotation_difference(unit(V3(P['thumb_dir'])))
+                b0.matrix = Matrix.Translation(b0.head) @ q.to_matrix().to_4x4() @ Matrix.Translation(-b0.head) @ b0.matrix
+            else:
+                i_dir = unit(idx.tail - idx.head)
+                t_dir = unit(t_dir - n * t_dir.dot(n)); i_dir = unit(i_dir - n * i_dir.dot(n))
+                a = math.atan2(t_dir.cross(i_dir).dot(n), t_dir.dot(i_dir))
+                b0.rotation_euler = (0, 0, -a)          # local Z is -palm
             bpy.context.view_layer.update()
             if P.get('thumb_flat'):
                 # press the thumb down into the palm plane (it naturally stands ~30 deg out of it)
@@ -136,9 +147,20 @@ def build_arm(side):
                 q = t_dir.rotation_difference(flat)
                 b0.matrix = Matrix.Translation(b0.head) @ q.to_matrix().to_4x4() @ Matrix.Translation(-b0.head) @ b0.matrix
                 bpy.context.view_layer.update()
+        if fi == 1 and P.get('thumb_curl_toward'):
+            # thumb flexes across, not like a finger: bend each joint about cross(bone dir, toward) in world space
+            toward = unit(V3(P['thumb_curl_toward']))
+            for k in range(3):
+                b = pb['f1_%d' % k]; ang = math.radians(angs[k])
+                if abs(ang) < 1e-6: continue
+                axis = unit(unit(b.tail - b.head).cross(toward))
+                Rm = Matrix.Rotation(ang, 4, axis)
+                b.matrix = Matrix.Translation(b.head) @ Rm @ Matrix.Translation(-b.head) @ b.matrix
+                bpy.context.view_layer.update()
+            continue
         for k in range(3):
             b = pb['f%d_%d' % (fi, k)]
-            if fi == 1 and k == 0 and P.get('thumb_along'):
+            if fi == 1 and k == 0 and (P.get('thumb_along') or P.get('thumb_adduct') or P.get('thumb_dir')):
                 b.rotation_euler = (math.radians(angs[k]) * P.get('curl_sign', 1) + b.rotation_euler.x, b.rotation_euler.y, b.rotation_euler.z)
             else:
                 b.rotation_euler = (math.radians(angs[k]) * P.get('curl_sign', 1), 0, 0)
@@ -150,6 +172,7 @@ def build_arm(side):
     ptsw = np.array([list(k) for k in kn] + [list(wr)]); n_act = Vector(np.linalg.svd(ptsw - ptsw.mean(axis=0))[2][2])
     side_sign = 1 if side == 'l' else -1
     if (th - Vector(ptsw.mean(axis=0))).dot(n_act.cross(f_act)) * side_sign < 0: n_act = -n_act   # thumb rule: left thumb = palm x fdir
+    print('%s index tip %s  thumb tip %s' % (side, tuple(round(x, 1) for x in (Mw @ pb['f2_2'].tail)), tuple(round(x, 1) for x in (Mw @ pb['f1_2'].tail))))
     print('%s posed: wrist %s fdir %s (want %s) palm %s (want %s) rest-palm-sign n_r.x=%.2f' % (side, tuple(round(x, 1) for x in wr), tuple(round(x, 2) for x in f_act), tuple(round(x, 2) for x in fdir), tuple(round(x, 2) for x in n_act), tuple(round(x, 2) for x in palm), n_r.x))
     bpy.ops.object.mode_set(mode='OBJECT')
     bpy.context.view_layer.update()
@@ -238,8 +261,11 @@ if MD3 and gun:
         ev.to_mesh_clear()
         all_uvs.extend(a_uvs); all_tris.extend(a_tris)
         loc = [tuple(i - base for i in t) for t in a_tris]; a_src = np.array(a_src)
+        follow = pose[s].get('follow', 'gun')       # 'gun' or 'oldarm' (the old blob's animation, e.g. the reload dip)
         for f in range(nframes):
             Rf, tf = gun_motion[f]
+            if follow == 'oldarm' or (follow == 'oldarm_reload' and frame_names[f].startswith('reload')):
+                Rf, tf = arm_motion[f]
             pv = posed[a_src] @ Rf.T + tf
             fverts[f].extend(map(tuple, pv)); fnorms[f].extend(map(tuple, smooth_normals(loc, pv)))
     names = [fn for fn, _ in md2['frames']]

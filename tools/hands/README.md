@@ -30,7 +30,7 @@ per-frame rigid motion. Check with `--render dir` (7 views) and
 
     $B -b -P tools/hands/rig_pose.py -- arms_uv.blend arms_joints.json pose_m4.json rig_m4.blend          --md2 v_m4/tris.md2 --skin v_m4/skin.png --band arm_band.png --md3 out.md3 --outskin out_skin.png --render dir
 
-Options added later: `thumb_flat` (press the thumb into the palm plane so it rests along the handguard), ortho views in `--render`, `render_md3.py --xray` (see-through gun).
+Thumbs: `thumb_dir` (full 3D direction for the thumb base, e.g. across a pistol grip's backstrap), `thumb_curl_toward` (world direction the thumb joints bend toward - thumbs flex across, not like fingers), `thumb_flat`. Reload: `follow: oldarm_reload` makes a hand follow the old blob's animation in reload frames (the M4's old model has only ONE arm - both blobs are the left forearm + hand - and it dips ~30 units during reload). Options added later: `thumb_flat` (press the thumb into the palm plane so it rests along the handguard), ortho views in `--render`, `render_md3.py --xray` (see-through gun).
 
 Notes: `curl_sign` is -1 (bone local X points so that +angle hyperextends);
 `scale` 152 = MakeHuman metres -> gun units for a hand a bit bigger than life.
