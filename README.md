@@ -28,6 +28,8 @@ from its card. Textures already above a size you pick are skipped, and results
 are cached per texture, so the next map
 that shares them is instant. Presets carry the instruction, not the files -
 a friend importing one runs the upscale on their own PC.
+The dialog shows the cache size and can clear files no map uses any more;
+the app warns once the cache passes 1 GB.
 
 ## Skin studio (weapon models)
 

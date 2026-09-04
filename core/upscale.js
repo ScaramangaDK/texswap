@@ -198,6 +198,54 @@ export class TextureUpscaler {
     return png;
   }
 
+  // Every cache file some map (working state or saved preset) still points
+  // at, by its file name; everything else in the cache is "unused".
+  #referencedFiles() {
+    const keep = new Set();
+    const maps = this.install.swaps.data.maps || {};
+    for (const e of Object.values(maps)) {
+      if (!e) continue;
+      const sets = [e.swaps, ...Object.values(e.saved || {}).map(p => p && p.swaps)];
+      for (const swaps of sets) {
+        if (!swaps) continue;
+        for (const [name, spec] of Object.entries(swaps)) {
+          if (!spec || spec.type !== 'upscale') continue;
+          const f = [2, 3, 4].includes(Number(spec.factor)) ? Number(spec.factor) : 4;
+          const k = this.#keyFor(name, f, spec.src === 'low' ? 'low' : 'auto', spec.model === 'smooth' ? 'smooth' : 'detail');
+          if (k) keep.add(k.key + '.png');
+        }
+      }
+    }
+    return keep;
+  }
+
+  cacheStats() {
+    const dir = cacheDir();
+    const keep = this.#referencedFiles();
+    let files = 0, bytes = 0, unusedFiles = 0, unusedBytes = 0;
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.endsWith('.png')) continue;
+      let size = 0;
+      try { size = fs.statSync(path.join(dir, f)).size; } catch { continue; }
+      files++; bytes += size;
+      if (!keep.has(f)) { unusedFiles++; unusedBytes += size; }
+    }
+    return { dir, files, bytes, unusedFiles, unusedBytes };
+  }
+
+  // Delete cache files no map uses any more (they come back on the next run).
+  clearUnused() {
+    const dir = cacheDir();
+    const keep = this.#referencedFiles();
+    let removed = 0, bytes = 0;
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.endsWith('.png') || keep.has(f)) continue;
+      try { bytes += fs.statSync(path.join(dir, f)).size; fs.unlinkSync(path.join(dir, f)); removed++; } catch { /* in use */ }
+    }
+    this.thumbCache.clear();
+    return { removed, removedBytes: bytes, ...this.cacheStats() };
+  }
+
   status() {
     const j = this.job;
     return {

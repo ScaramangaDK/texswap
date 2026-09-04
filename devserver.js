@@ -67,6 +67,7 @@ function scanResult(inst) {
     favTextures: inst.swaps.favTextures(),
     favSets: inst.swaps.favSets(),
     skins: inst.skins.summary(),
+    upscaleCache: (() => { try { const c = inst.upscale.cacheStats(); return { bytes: c.bytes, unusedBytes: c.unusedBytes, files: c.files }; } catch { return null; } })(),
     maps: inst.listMaps(),
   };
 }
@@ -343,6 +344,9 @@ async function handleApi(req, url, res) {
           return json(res, 409, { error: e.message });
         }
       }
+      case '/api/upscale/clearcache': {
+        return json(res, 200, { ok: true, ...inst.upscale.clearUnused() });
+      }
       case '/api/upscale/cancel': {
         inst.upscale.cancel();
         return json(res, 200, { ok: true, status: inst.upscale.status() });
@@ -497,6 +501,9 @@ async function handleApi(req, url, res) {
 
     case '/api/upscale/status':
       return json(res, 200, getInstall(dir).upscale.status());
+
+    case '/api/upscale/cache':
+      return json(res, 200, getInstall(dir).upscale.cacheStats());
 
     case '/api/tools/status':
       return json(res, 200, { tool: upscalerStatus() });

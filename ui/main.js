@@ -296,6 +296,13 @@ function renderHook() {
   light.addEventListener('click', () => openLighting('global'));
   area.appendChild(light);
 
+  // AI upscale cache: warn once per session past 1 GB (the dialog has Clear unused)
+  const uc = state.scan.upscaleCache;
+  if (uc && uc.bytes > 1073741824 && !window.__upCacheWarned) {
+    window.__upCacheWarned = true;
+    toast(`AI upscale cache is ${(uc.bytes / 1073741824).toFixed(1)} GB${uc.unusedBytes ? ` (${(uc.unusedBytes / 1048576).toFixed(0)} MB unused)` : ''} - open ✨ AI upscale… on any map to clear unused files`, true);
+  }
+
   const skins = document.createElement('button');
   const skOn = state.scan.skins && state.scan.skins.enabled && state.scan.skins.active > 0;
   skins.innerHTML = skOn ? '🔫 Weapon skins<span class="dot"></span>' : '🔫 Weapon skins';
@@ -2215,11 +2222,12 @@ async function openUpscaleMap() {
   let lastEligible = [];
 
   const render = async () => {
-    let plan, status;
+    let plan, status, cache;
     try {
-      [plan, status] = await Promise.all([
+      [plan, status, cache] = await Promise.all([
         apiGet('/api/upscale/plan', { name: map, factor, minSkip, src, model }),
         apiGet('/api/upscale/status'),
+        apiGet('/api/upscale/cache').catch(() => null),
       ]);
     } catch (e) { toast('Upscale: ' + e.message, true); return; }
     const tool = plan.tool;
@@ -2273,10 +2281,12 @@ async function openUpscaleMap() {
             <img loading="lazy" src="${thumbUrl({ upscale: a.name, factor: a.factor, src: a.src, model: a.model, size: 64 })}" alt="">
             <span class="upname">${a.name.split('/').pop()}<small>done · ${a.factor}x ${a.model}${a.src === 'low' ? ' · wal' : ''}</small></span>
           </label>`).join('')}</div>
+        ${plan.eligible.some(e => e.regen) ? `<div class="sk-err">${plan.eligible.filter(e => e.regen).length} texture${plan.eligible.filter(e => e.regen).length === 1 ? '' : 's'} of this map's preset ${plan.eligible.filter(e => e.regen).length === 1 ? 'has' : 'have'} no generated file on this PC (imported preset or cleared cache) - ticked above, the run regenerates them with their own settings.</div>` : ''}
         <div class="count">${plan.skipHiRes.length} already hi-res · ${plan.skipSwapped.length} have other swaps · ${plan.already.length} upscaled · ${plan.skipMissing.length} missing · ${plan.tooBig.length} over the size limit${plan.noGrid.length ? ` · <span title="${plan.noGrid.join(', ')}">${plan.noGrid.length} without a .wal (the engine would tile them ${factor}x denser - left alone)</span>` : ''}</div>
         ${nSel ? `<div class="count">estimated ${est} on your GPU</div>` : ''}
       </div>
       ${status.finished && status.map === map ? `<p class="mnote">Last run: ${status.applied} textures applied${status.failed.length ? `, ${status.failed.length} failed` : ''}${status.cancelled ? ' (cancelled)' : ''}.</p>` : ''}
+      ${cache ? `<p class="mnote upcache${cache.bytes > 1073741824 ? ' sk-err' : ''}">${cache.bytes > 1073741824 ? 'The cache is getting big. ' : ''}Cache on this PC: ${cache.files} file${cache.files === 1 ? '' : 's'}, ${(cache.bytes / 1048576).toFixed(0)} MB, shared by every map${cache.unusedFiles ? ` · <b>${cache.unusedFiles}</b> unused (${(cache.unusedBytes / 1048576).toFixed(0)} MB) <button class="small" id="upClearCache" title="Deletes cache files no map uses any more - they are simply regenerated if needed again">Clear unused</button>` : ' · nothing unused'}</p>` : ''}
       ${busyElsewhere ? `<p class="sk-err">Busy upscaling ${status.map} right now - wait for it to finish.</p>` : ''}`;
     openModal(`
       <div class="mhead"><h3>✨ AI upscale textures <span class="mono">${map}</span></h3><button class="mclose">✕</button></div>
@@ -2327,6 +2337,15 @@ async function openUpscaleMap() {
     }));
     $('upAll').addEventListener('click', () => { selected = new Set(lastEligible); $('modal').querySelectorAll('.upitem input').forEach(cb => { cb.checked = true; }); syncSel(); });
     $('upNone').addEventListener('click', () => { selected = new Set(); $('modal').querySelectorAll('.upitem input').forEach(cb => { cb.checked = false; }); syncSel(); });
+    const cc = $('upClearCache');
+    if (cc) cc.addEventListener('click', async () => {
+      cc.disabled = true;
+      try {
+        const r = await apiPost('/api/upscale/clearcache', {});
+        toast(`Removed ${r.removed} unused cache file${r.removed === 1 ? '' : 's'} (${(r.removedBytes / 1048576).toFixed(0)} MB)`);
+        render();
+      } catch (e) { toast(e.message, true); cc.disabled = false; }
+    });
     const rm = $('upRemove');
     if (rm) rm.addEventListener('click', async () => {
       try {
