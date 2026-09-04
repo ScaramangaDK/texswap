@@ -19,7 +19,21 @@ feature. Blender 4.5 LTS portable, headless:
 Then upload out.md3 and out_skin.png in the Skin studio (model first, then skin),
 or through the API (`/api/skins/upload` with `dir` = the install).
 
-## How fit_hands.py works
+## rig_pose.py (the way that works)
+fit_hands.py tried to inherit the pose from the old blob hands; that was a dead
+end. rig_pose.py builds an armature on the MakeHuman arms (forearm, hand, 3 bones
+per finger, automatic weights) and poses each hand from an explicit frame in
+pose_m4.json: wrist position, finger direction, palm direction, elbow direction,
+per-joint curl angles, optional thumb-along. Both hands then follow the gun's own
+per-frame rigid motion. Check with `--render dir` (7 views) and
+`python plot_md3.py out.md3 plot.png 30` (exact x-z / x-y wireframes with a grid).
+
+    $B -b -P tools/hands/rig_pose.py -- arms_uv.blend arms_joints.json pose_m4.json rig_m4.blend          --md2 v_m4/tris.md2 --skin v_m4/skin.png --band arm_band.png --md3 out.md3 --outskin out_skin.png --render dir
+
+Notes: `curl_sign` is -1 (bone local X points so that +angle hyperextends);
+`scale` 152 = MakeHuman metres -> gun units for a hand a bit bigger than life.
+
+## How fit_hands.py works (superseded)
 * Old arm triangles are found by their skin-UV strips (`REGIONS`), clustered
   into two arms (single-linkage on shared vertices), reference frame `REF=30`
   (frame 0 is a draw pose).
