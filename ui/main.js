@@ -2187,6 +2187,14 @@ function upBind() {
   $('upAll').addEventListener('click', () => { UP.selected = new Set([...UP.eligible, ...UP.done].map(e => e.name)); upRenderGrid(); upRenderSide(); });
   $('upNone').addEventListener('click', () => { UP.selected = new Set(); upRenderGrid(); upRenderSide(); });
   $('upFilter').addEventListener('input', upRenderGrid);
+  // tile size: persisted, applied as a CSS variable on the grid
+  const upTileApply = () => {
+    const v = localStorage.getItem('aq2ts.uptile') || '240';
+    $('upTile').value = v;
+    $('upGrid').style.setProperty('--up-tile', v + 'px');
+  };
+  upTileApply();
+  $('upTile').addEventListener('change', () => { localStorage.setItem('aq2ts.uptile', $('upTile').value); upTileApply(); upRenderGrid(); });
   $('upStart').addEventListener('click', async () => {
     const names = [...UP.eligible, ...UP.done].map(e => e.name).filter(upIsSel);
     if (!names.length) return;
@@ -2370,12 +2378,17 @@ function upRenderGrid() {
     const card = document.createElement('div');
     card.className = 'up-card' + (upIsSel(e.name) ? ' sel' : '') + (e.isDone ? ' done' : '');
     card.dataset.name = e.name;
+    const tile = Number(localStorage.getItem('aq2ts.uptile')) || 240;
+    const tsize = tile > 240 ? 512 : 256;
+    const imgbox = document.createElement('div');
+    imgbox.className = 'up-imgbox';
     const img = document.createElement('img');
     img.loading = 'lazy';
     img.alt = '';
     img.src = e.isDone
-      ? thumbUrl({ upscale: e.name, factor: e.factor, src: e.src, model: e.model, grain: e.grain || 0, size: 256 })
-      : thumbUrl({ tex: e.name, size: 256, res: o.src === 'low' ? 'low' : 'hi' });
+      ? thumbUrl({ upscale: e.name, factor: e.factor, src: e.src, model: e.model, grain: e.grain || 0, size: tsize })
+      : thumbUrl({ tex: e.name, size: tsize, res: o.src === 'low' ? 'low' : 'hi' });
+    imgbox.appendChild(img);
     const badge = document.createElement('span');
     badge.className = 'up-badge';
     badge.textContent = e.isDone
@@ -2393,7 +2406,7 @@ function upRenderGrid() {
     meta.textContent = e.isDone
       ? 'tick to redo with the settings on the left'
       : `${e.w}×${e.h} ${e.ext ? e.ext.slice(1) : ''} → ${e.w * e.factor}×${e.h * e.factor}`;
-    card.append(img, badge, tick, name, meta);
+    card.append(imgbox, badge, tick, name, meta);
     card.addEventListener('click', () => {
       if (running) return;
       if (!UP.selected) UP.selected = new Set(UP.eligible.map(x => x.name));

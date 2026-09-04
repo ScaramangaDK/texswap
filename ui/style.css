@@ -1432,12 +1432,13 @@ footer .credit b { color: var(--accent-hi); font-weight: 600; }
 }
 .up-toolbar input { width: 280px; }
 .up-grid {
+  --up-tile: 240px;
   flex: 1;
   overflow-y: auto;
   padding: 14px 16px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(var(--up-tile), 1fr));
+  gap: 12px;
   align-content: start;
 }
 .up-card {
@@ -1453,7 +1454,8 @@ footer .credit b { color: var(--accent-hi); font-weight: 600; }
 .up-card:hover { border-color: var(--accent-hi); transform: translateY(-1px); }
 .up-card.sel { opacity: 1; border-color: var(--accent); box-shadow: var(--glow-soft); }
 .up-card.done { border-style: dashed; }
-.up-card img { display: block; width: 100%; height: 108px; object-fit: cover; background: var(--checker); }
+.up-card .up-imgbox { aspect-ratio: 1 / 1; display: flex; align-items: center; justify-content: center; background: var(--checker); overflow: hidden; }
+.up-card img { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; }
 .up-card .up-name { padding: 6px 8px 0; font: 11.5px/1.2 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .up-card .up-meta { padding: 2px 8px 7px; font-size: 11px; color: var(--faint); }
 .up-card .up-badge {
