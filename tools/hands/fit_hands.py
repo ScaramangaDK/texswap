@@ -1,14 +1,14 @@
 """Fit new arm meshes (MakeHuman, CC0) onto an AQ2 view model's old arm animation.
 
     blender -b -P tools/hands/fit_hands.py -- v_m4.md2 skin.png arms_uv.blend arms_joints.json out.md3 out_skin.png
-            [--band arm_band.png] [--bandgain 0.35] [--curl 1.0] [--palm 1|-1] [--scale 1.0]
-            [--shift_l d] [--shift_r d] [--move_l x,y,z] [--move_r x,y,z] [--render dir]
+            --band arm_band.png --bandgain 0.35 --scale 1.25 --curl_l 0.6
+            --palmdir_l 0,-0.15,1 --palmdir_r 0,1,0 --hand_r 22.5,-26,-23 [--render dir]
 
-Options: --band = baked arm texture from bake_arms.py (else a flat skin tone);
---bandgain darkens it (q2 lights view models ~2.5x, stock skins are stored dark);
---curl/--palm finger grip amount and direction; --shift_<side> moves a hand along
-its palm normal (negative = deeper behind the grip); --move_<side> is a constant
-gun-space offset (x forward, y left, z up); --render writes diagnostic PNGs.
+The M4 settings above are the shipped ones. Per weapon you set: --palmdir_<side>
+(direction the palm faces, gun space: x forward, y left, z up), --hand_<side>
+(palm-centre position; without it the palm slides along its normal until it
+touches the gun), --curl_<side> (0..1), --scale (hand size), --shift/--move
+for small corrections. tools/hands/README.md explains how to read the numbers.
                              [--scale k] [--render dir]
 
 Old arm/hand triangles are found by their skin UV strips, then grouped into the
@@ -32,6 +32,10 @@ md2_path, skin_path, arms_blend, joints_path, out_md3, out_skin = [os.path.abspa
 opt = lambda k, d: float(argv[argv.index(k) + 1]) if k in argv else d
 SCALE = opt('--scale', 1.0)
 CURL = opt('--curl', 1.0)          # 1 = full grip, 0 = open hand
+CURLS = {'l': opt('--curl_l', CURL), 'r': opt('--curl_r', CURL)}
+GAP = opt('--gap', 1.2)
+HAND = {k: (np.array([float(x) for x in argv[argv.index('--hand_' + k) + 1].split(',')]) if '--hand_' + k in argv else None) for k in ('l', 'r')}   # put the palm centre HERE (gun space) instead of the contact push            # palm-to-gun distance after the contact push (gun units)
+PALMDIR = {k: (np.array([float(x) for x in argv[argv.index('--palmdir_' + k) + 1].split(',')]) if '--palmdir_' + k in argv else None) for k in ('l', 'r')}   # force the palm-facing direction (gun space)
 PALM = opt('--palm', 1.0)
 SHIFT = {'l': opt('--shift_l', 0.0), 'r': opt('--shift_r', 0.0)}
 MOVE = {k: (np.array([float(x) for x in argv[argv.index('--move_' + k) + 1].split(',')]) if '--move_' + k in argv else np.zeros(3)) for k in ('l', 'r')}   # constant offset in gun space (x fwd, y left, z up)   # move a hand away from its palm side (out of the grip), gun units          # -1 flips the curl direction if it bends the wrong way
@@ -149,10 +153,13 @@ def seg_dist(P, a, b):
     ab = b - a; t = np.clip(((P - a) @ ab) / (ab @ ab), 0, 1)
     return np.linalg.norm(P - (a + t[:, None] * ab), axis=1)
 
-# per-joint angles (MCP, PIP, DIP) in degrees for a rifle grip; index bends less (trigger)
-GRIP = {1: (25, 35, 20), 2: (45, 55, 25), 3: (70, 85, 40), 4: (75, 90, 45), 5: (80, 90, 50)}
+# per-joint angles (MCP, PIP, DIP) in degrees. MakeHuman: finger 1 = thumb, 2 = index, 5 = pinky.
+GRIP = {
+    'r': {1: (35, 30, 15), 2: (45, 40, 20), 3: (70, 85, 40), 4: (75, 90, 45), 5: (80, 90, 50)},   # trigger hand: index bent onto the trigger
+    'l': {1: (40, 30, 15), 2: (55, 70, 35), 3: (60, 80, 40), 4: (65, 85, 45), 5: (70, 90, 50)},   # support hand wraps the handguard
+}
 
-def curl_fingers(V, j, curl, palm_sign):
+def curl_fingers(V, j, curl, palm_sign, grip):
     V = V.copy()
     wrist = np.array(j['wrist'])
     chains = {fi: np.array(j['fingers'][str(fi)], dtype=np.float64) for fi in range(1, 6)}
@@ -169,9 +176,9 @@ def curl_fingers(V, j, curl, palm_sign):
         ch = chains[fi].copy()
         mine = cand[owner == fi]
         fdir = ch[3] - ch[0]; fdir /= np.linalg.norm(fdir)
-        axis = np.cross(normal, fdir)
+        axis = np.cross(fdir, normal)      # tips move toward +normal (the palm side)
         for k in range(3):
-            ang = math.radians(GRIP[fi][k] * curl)
+            ang = math.radians(grip[fi][k] * curl)
             if ang == 0: continue
             R = rot_axis(axis, ang)
             proj = (V[mine] - ch[k]) @ fdir
@@ -184,9 +191,13 @@ def curl_fingers(V, j, curl, palm_sign):
 for side in ('l', 'r'):
     na = new_arms[side]
     na['V_rest'] = na['V']
-    na['V'] = curl_fingers(na['V'], joints[side], CURL, PALM)
+    na['V'] = curl_fingers(na['V'], joints[side], CURLS[side], PALM, GRIP[side])
+    _j = joints[side]; _kn = np.array([_j['fingers'][str(fi)][0] for fi in range(2, 6)]); _pts = np.vstack([_kn, np.array(_j['wrist'])[None]])
+    _n = np.linalg.svd(_pts - _pts.mean(axis=0))[2][2]
+    _mv = np.linalg.norm(na['V'] - na['V_rest'], axis=1) > 1e-6
+    print('%s hand: fingertips moved %.3f along the palm-plane normal %s (thumb side check: %.3f)' % (side, ((na['V'][_mv] - na['V_rest'][_mv]).mean(axis=0)) @ _n, np.round(_n, 2), (np.array(_j['fingers']['1'][1]) - _pts.mean(axis=0)) @ np.cross(_n, _kn.mean(axis=0) - np.array(_j['wrist']))))
     na['hand_mask'] = ((na['V'] - np.array(joints[side]['wrist'])) @ (np.array(joints[side]['hand2']) - np.array(joints[side]['wrist']))) > 0
-print('fingers curled (curl %.2f, palm %+d)' % (CURL, int(PALM)))
+print('fingers curled (curl l %.2f r %.2f, palm %+d)' % (CURLS['l'], CURLS['r'], int(PALM)))
 
 # ---- scaled rigid ICP ----
 def rot_between(a, b):
@@ -222,6 +233,7 @@ def icp(src_pts, target_pts, iters=20):
     return S_tot, R_tot, t_tot, cost
 
 fitted = {}
+gun_samples = surface_samples(gun_tris, frames_np[REF], 20000)
 for oa in old_arms:
     side = oa['side']; na = new_arms[side]
     Pold = frames_np[REF][oa['vidx']]
@@ -248,13 +260,50 @@ for oa in old_arms:
             if best is None or cost < best[0]:
                 best = (cost, Rr, s, R, t, sign, roll)
     cost, Rr, s, R, t, sign, roll = best
-    Vfit = s * ((V0 @ Rr.T + c_old) @ R.T) + t
+    # rest -> fitted as an affine map (so joints can be mapped too)
+    mean_rest = na['V'].mean(axis=0)
+    A = s * base_scale * (R @ Rr); b = s * (R @ c_old) + t - A @ mean_rest
+    j = joints[side]
+    kn = np.array([j['fingers'][str(fi)][0] for fi in range(2, 6)]); pts = np.vstack([kn, np.array(j['wrist'])[None]])
+    # palm direction = where the fingertips went when they curled (out of the palm surface)
+    # (curl displacement alone is tilted ~45 deg toward the wrist for a strong curl - use only its sign)
+    moved = np.linalg.norm(na['V'] - na['V_rest'], axis=1) > 1e-6
+    disp = (na['V'][moved] - na['V_rest'][moved]).mean(axis=0)
+    palm_n_rest = np.linalg.svd(pts - pts.mean(axis=0))[2][2]; palm_n_rest *= np.sign(disp @ palm_n_rest)
+    axis_rest = na['tip'] - na['cut']; axis_rest /= np.linalg.norm(axis_rest)
+    hand_c = (A @ na['V'][na['hand_mask']].T).T.mean(axis=0) + b
+    # --- anatomical roll: rotate about the arm axis so the palm faces what it holds ---
+    ax = A @ axis_rest; ax /= np.linalg.norm(ax)
+    pn = A @ palm_n_rest; pn /= np.linalg.norm(pn)
+    if PALMDIR[side] is not None:
+        want = PALMDIR[side] / np.linalg.norm(PALMDIR[side])
+    else:
+        d2 = np.linalg.norm(gun_samples - hand_c, axis=1); want = gun_samples[d2.argmin()] - hand_c; want /= np.linalg.norm(want)
+    p1 = pn - ax * (pn @ ax); p2 = want - ax * (want @ ax)
+    if np.linalg.norm(p1) > 1e-6 and np.linalg.norm(p2) > 1e-6:
+        p1 /= np.linalg.norm(p1); p2 /= np.linalg.norm(p2)
+        ang = math.atan2(np.cross(p1, p2) @ ax, p1 @ p2)
+        Rroll = rot_axis(ax, ang)
+        A = Rroll @ A; b = Rroll @ (b - hand_c) + hand_c
+        print('%s arm: palm rolled %.0f deg to face %s' % (side, math.degrees(ang), np.round(want, 2)))
+    # --- contact push: slide along the palm normal until the palm plane is GAP units from the gun ---
+    pn = A @ palm_n_rest; pn /= np.linalg.norm(pn)
+    palm_c = (A @ pts.T).T.mean(axis=0) + b
+    rel = gun_samples - palm_c; along = rel @ pn; lat = np.linalg.norm(rel - np.outer(along, pn), axis=1)
+    cand = along[(lat < 4.5) & (along > -3)]
+    if HAND[side] is not None:
+        b = b + (HAND[side] - palm_c)
+        print('%s arm: palm centre placed at %s' % (side, np.round(HAND[side], 1)))
+    elif len(cand):
+        push = cand.min() - GAP
+        b = b + push * pn
+        print('%s arm: palm pushed %.1f to contact (%d gun samples in front)' % (side, push, len(cand)))
     if SHIFT[side]:
-        j = joints[side]; kn = np.array([j['fingers'][str(fi)][0] for fi in range(2, 6)]); pts = np.vstack([kn, np.array(j['wrist'])[None]])
-        palm_n = np.linalg.svd(pts - pts.mean(axis=0))[2][2] * PALM          # rest-space palm normal (curl direction)
-        Vfit = Vfit - SHIFT[side] * (R @ Rr @ palm_n)                          # rotations only: same mapping as V0 -> Vfit
-        print('%s arm: shifted %.1f away from the palm side' % (side, SHIFT[side]))
-    Vfit = Vfit + MOVE[side]
+        b = b - SHIFT[side] * pn
+    b = b + MOVE[side]
+    Vfit = (A @ na['V'].T).T + b
+    _h = Vfit[na['hand_mask']]; _pc = (A @ pts.T).T.mean(axis=0) + b; _kn = (A @ kn.T).T + b
+    print('%s hand @REF: bbox %s..%s  palm centre %s  knuckles x %.1f..%.1f  tip %s  wrist %s' % (side, np.round(_h.min(axis=0), 1), np.round(_h.max(axis=0), 1), np.round(_pc, 1), _kn[:, 0].min(), _kn[:, 0].max(), np.round(A @ na['tip'] + b, 1), np.round(A @ na['wrist'] + b, 1)))
     print('%s arm: old len %.1f, start scale %.1f, icp scale %.2f, axis %+d roll %d, cost %.2f' % (side, old_len, base_scale, s, sign, roll, cost))
     Pref_old = frames_np[REF][oa['vidx']]
     per_frame = []

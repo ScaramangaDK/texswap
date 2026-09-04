@@ -12,7 +12,9 @@ feature. Blender 4.5 LTS portable, headless:
     # 2. once: repack the arm UVs into two square halves and bake a skin texture
     $B -b -P tools/hands/bake_arms.py -- arms.blend arms_uv.blend arm_band.png 1280 640
     # 3. per weapon: fit onto the MD2's arm animation, write MD3 + skin
-    $B -b -P tools/hands/fit_hands.py -- v_m4/tris.md2 v_m4/skin.png arms_uv.blend arms_joints.json          out.md3 out_skin.png --band arm_band.png --bandgain 0.35 --shift_r -3
+    $B -b -P tools/hands/fit_hands.py -- v_m4/tris.md2 v_m4/skin.png arms_uv.blend arms_joints.json          out.md3 out_skin.png --band arm_band.png --bandgain 0.35 --scale 1.25 --curl_l 0.6          --palmdir_l 0,-0.15,1 --palmdir_r 0,1,0 --hand_r 22.5,-26,-23
+    # check the pose without the game: exact wireframe plots + workbench renders of the MD3
+    $B -b -P tools/hands/render_md3.py -- out.md3 view.png 30 50,-75,-45 22,-24,-22 35   # cam x,y,z  aim x,y,z  fov
 
 Then upload out.md3 and out_skin.png in the Skin studio (model first, then skin),
 or through the API (`/api/skins/upload` with `dir` = the install).
@@ -21,10 +23,20 @@ or through the API (`/api/skins/upload` with `dir` = the install).
 * Old arm triangles are found by their skin-UV strips (`REGIONS`), clustered
   into two arms (single-linkage on shared vertices), reference frame `REF=30`
   (frame 0 is a draw pose).
-* New arms: fingers curled toward the palm (`GRIP` angles per joint), then a
-  rigid ICP (Kabsch, size fixed from the old arm length, hand-weighted samples)
-  started from 2 axis signs x 8 rolls picks the pose; every animation frame
-  reuses the old arm's per-frame rigid motion.
+* New arms: fingers curled toward the palm (`GRIP` angles per joint and side;
+  MakeHuman finger 1 = thumb, 2 = index), then a rigid ICP (Kabsch, size from
+  the old arm length x --scale, hand-weighted samples) started from 2 axis
+  signs x 8 rolls gives position + forearm axis. The old blob hands carry no
+  usable orientation, so the roll comes from anatomy: `--palmdir_<side>` rolls
+  the hand about its forearm axis until the palm faces that direction, then the
+  palm slides along its normal into contact with the gun (`--gap`) or is put at
+  `--hand_<side>`. Every animation frame reuses the old arm's per-frame rigid
+  motion (Kabsch of the old arm verts REF -> frame).
+* Finding the numbers: the script prints each hand's bbox / palm centre /
+  knuckles at the reference frame; `render_md3.py` renders the MD3, and a
+  wireframe x-z / x-y plot with a unit grid (see the session notes) shows where
+  the grip and handguard really are. On the M4 the pistol grip is at
+  x 20-25, z -18..-30, right face y -24; the handguard at x 50-70.
 * MD3: gun surface keeps its UVs squeezed into the top band, arms map into the
   lower band; surfaces split at 4000 tris (see md2_to_md3.py).
 
@@ -39,5 +51,11 @@ or through the API (`/api/skins/upload` with `dir` = the install).
   with DIRECT+INDIRECT+COLOR under a uniform world light (= albedo + soft AO).
 * Blender's `open_mainfile` drops every image handle - reload after it.
 * The exe's API acts on the app's LAST-USED install unless `dir` is passed.
+* MD3 frame header: keep the local origin at 0,0,0. q2pro adds it as a
+  translation; a bbox-centre origin pushed the M4 45 units away (25% smaller,
+  gap at the screen edge).
+* Palm normal = SVD plane through knuckles 2-5 + wrist, sign taken from the
+  finger-curl displacement. The raw curl displacement is tilted ~45 deg toward
+  the wrist and must not be used as the normal.
 
 Assets (blends, joints, band, finished M4) live in `C:\AI\AIprojectsq2models\hands\`.

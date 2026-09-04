@@ -110,7 +110,10 @@ def write_md3(path, name, frames, surf_name, shader, tris, uvs, frame_verts, fra
         vs = frame_verts[fi]
         mn = [min(v[k] for v in vs) for k in range(3)]
         mx = [max(v[k] for v in vs) for k in range(3)]
-        origin = [(mn[k]+mx[k])/2 for k in range(3)]
+        # q2pro applies the frame's local origin as a translation (Q3 treats it as
+        # informational) - a bbox-centre origin moved the whole M4 45 units forward
+        # and made it look 25% smaller in game (2026-09-04). Keep it at zero.
+        origin = [0.0, 0.0, 0.0]
         radius = max(math.dist(origin, v) for v in vs) if vs else 0.0
         frame_bytes += struct.pack('<3f3f3ff16s', *mn, *mx, *origin, radius, fname.encode('latin1')[:15])
     chunks = split_surfaces(tris, uvs, frame_verts, frame_normals)
