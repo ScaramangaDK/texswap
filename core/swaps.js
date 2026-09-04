@@ -518,8 +518,9 @@ export class SwapStore {
         const clean = { type: 'upscale', factor: f };
         if (spec.src === 'low') clean.src = 'low';
         if (spec.model === 'smooth') clean.model = 'smooth';
+        if ([25, 50, 75, 100].includes(Number(spec.grain))) clean.grain = Number(spec.grain);
         swaps[from] = clean;
-        if (!this.install.upscale || !this.install.upscale.cachedFile(from, f, clean.src || 'auto', clean.model || 'detail')) pendingUpscales++;
+        if (!this.install.upscale || !this.install.upscale.cachedFile(from, f, clean.src || 'auto', clean.model || 'detail', clean.grain || 0)) pendingUpscales++;
       }
       else if (spec && spec.type === 'invisible') {
         warnings.push(`invisible swap for ${from} skipped - the invisible feature was removed (cheat risk)`);
@@ -600,7 +601,7 @@ export class SwapStore {
     let fileBase, make, alwaysWrite = false;
     if (spec.type === 'upscale') {
       const factor = [2, 3, 4].includes(Number(spec.factor)) ? Number(spec.factor) : 4;
-      const cached = from && this.install.upscale ? this.install.upscale.cachedFile(from, factor, spec.src === 'low' ? 'low' : 'auto', spec.model === 'smooth' ? 'smooth' : 'detail') : null;
+      const cached = from && this.install.upscale ? this.install.upscale.cachedFile(from, factor, spec.src === 'low' ? 'low' : 'auto', spec.model === 'smooth' ? 'smooth' : 'detail', Number(spec.grain) || 0) : null;
       if (!cached) {
         warnings.push(`${from}: AI upscale not generated on this PC yet - run "AI upscale textures" on the map`);
         return null;

@@ -338,6 +338,7 @@ async function handleApi(req, url, res) {
             model: body.model === 'smooth' ? 'smooth' : 'detail',
             names: Array.isArray(body.names) ? body.names.map(String) : null,
             src: body.src === 'low' ? 'low' : 'auto',
+            grain: Number(body.grain) || 0,
           });
           return json(res, 200, { ok: true, ...r, status: inst.upscale.status() });
         } catch (e) {
@@ -492,7 +493,7 @@ async function handleApi(req, url, res) {
       const name = q.get('name');
       if (!name) return json(res, 400, { error: 'missing ?name=' });
       try {
-        const plan = getInstall(dir).upscale.plan(name, { factor: Number(q.get('factor')) || 4, minSkip: Number(q.get('minSkip')) || 1024, src: q.get('src') === 'low' ? 'low' : 'auto', model: q.get('model') === 'smooth' ? 'smooth' : 'detail' });
+        const plan = getInstall(dir).upscale.plan(name, { factor: Number(q.get('factor')) || 4, minSkip: Number(q.get('minSkip')) || 1024, src: q.get('src') === 'low' ? 'low' : 'auto', model: q.get('model') === 'smooth' ? 'smooth' : 'detail', grain: Number(q.get('grain')) || 0 });
         return json(res, 200, { ...plan, tool: upscalerStatus() });
       } catch (e) {
         return json(res, 400, { error: e.message });
@@ -544,7 +545,7 @@ async function handleApi(req, url, res) {
       }
       else if (q.get('custom')) png = inst.customThumbPng(q.get('custom'), size);
       else if (q.get('upscale')) {
-        png = inst.upscale.thumbPng(q.get('upscale'), Number(q.get('factor')) || 4, size, q.get('src') === 'low' ? 'low' : 'auto', q.get('model') === 'smooth' ? 'smooth' : 'detail');
+        png = inst.upscale.thumbPng(q.get('upscale'), Number(q.get('factor')) || 4, size, q.get('src') === 'low' ? 'low' : 'auto', q.get('model') === 'smooth' ? 'smooth' : 'detail', Number(q.get('grain')) || 0);
         // no generated file yet: serve the original, but never let the
         // browser cache that stand-in under the upscale's URL
         if (!png) { png = inst.thumbPng('textures/' + q.get('upscale'), size); fallback = true; }

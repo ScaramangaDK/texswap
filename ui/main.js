@@ -82,7 +82,7 @@ function thumbUrl(params) {
 }
 
 function swapThumbUrl(spec, size, name = '') {
-  if (spec.type === 'upscale') return thumbUrl({ upscale: name, factor: spec.factor || 4, size, src: spec.src === 'low' ? 'low' : 'auto', model: spec.model === 'smooth' ? 'smooth' : 'detail' });
+  if (spec.type === 'upscale') return thumbUrl({ upscale: name, factor: spec.factor || 4, size, src: spec.src === 'low' ? 'low' : 'auto', model: spec.model === 'smooth' ? 'smooth' : 'detail', grain: spec.grain || 0 });
   if (spec.type === 'flat') {
     const p = { flat: spec.color, style: spec.style || 'solid', size };
     if (spec.color2) p.color2 = spec.color2;
@@ -98,7 +98,7 @@ function swapLabel(spec) {
   switch (spec.type) {
     case 'flat': return `→ flat ${spec.color}${spec.style && spec.style !== 'solid' ? ` · ${spec.style}${spec.scale && spec.scale !== 1 ? ` ${spec.scale}×` : ''}${spec.color2 ? ' ' + spec.color2 : ''}` : ''}`;
     case 'custom': return `→ your image${spec.w ? ` (${spec.w}×${spec.h})` : ''}`;
-    case 'upscale': return `→ AI upscaled ${spec.factor || 4}x${spec.model === 'smooth' ? ' smooth' : ''}${spec.src === 'low' ? ' from the original .wal' : ''}${state.res === 'low' ? ' - not in low-res mode, showing the .wal' : ' (hi-res mode)'}`;
+    case 'upscale': return `→ AI upscaled ${spec.factor || 4}x${spec.model === 'smooth' ? ' smooth' : ''}${spec.grain ? ' · grain ' + spec.grain + '%' : ''}${spec.src === 'low' ? ' from the original .wal' : ''}${state.res === 'low' ? ' - not in low-res mode, showing the .wal' : ' (hi-res mode)'}`;
     case 'invisible': return '→ invisible';
     default: return `→ ${spec.to}`;
   }
@@ -2183,6 +2183,7 @@ function upOpts() {
     minSkip: Number($('upSkip').value) || 1024,
     src: $('upSrc').value === 'auto' ? 'auto' : 'low',
     model: $('upModel').value === 'smooth' ? 'smooth' : 'detail',
+    grain: Number($('upGrain').value) || 0,
   };
 }
 
@@ -2195,7 +2196,7 @@ function upBind() {
   if (UP.bound) return;
   UP.bound = true;
   $('upClose').addEventListener('click', closeUpscale);
-  for (const [id, key] of [['upFactor', 'aq2ts.upFactor'], ['upSkip', 'aq2ts.upSkip'], ['upSrc', 'aq2ts.upSrc'], ['upModel', 'aq2ts.upModel']]) {
+  for (const [id, key] of [['upFactor', 'aq2ts.upFactor'], ['upSkip', 'aq2ts.upSkip'], ['upSrc', 'aq2ts.upSrc'], ['upModel', 'aq2ts.upModel'], ['upGrain', 'aq2ts.upGrain']]) {
     $(id).addEventListener('change', () => { localStorage.setItem(key, $(id).value); UP.selected = null; upRefresh(); });
   }
   $('upAll').addEventListener('click', () => { UP.selected = new Set([...UP.eligible, ...UP.done].map(e => e.name)); upRenderGrid(); upRenderSide(); });
@@ -2248,6 +2249,7 @@ async function openUpscaleMap() {
   $('upSkip').value = String(Number(localStorage.getItem('aq2ts.upSkip')) || 1024);
   $('upSrc').value = localStorage.getItem('aq2ts.upSrc') === 'auto' ? 'auto' : 'low';
   $('upModel').value = localStorage.getItem('aq2ts.upModel') === 'smooth' ? 'smooth' : 'detail';
+  $('upGrain').value = String([25, 50, 75, 100].includes(Number(localStorage.getItem('aq2ts.upGrain'))) ? Number(localStorage.getItem('aq2ts.upGrain')) : 0);
   $('upMapName').textContent = UP.map;
   $('upFilter').value = '';
   $('upGrid').textContent = '';
@@ -2387,12 +2389,12 @@ function upRenderGrid() {
     img.loading = 'lazy';
     img.alt = '';
     img.src = e.isDone
-      ? thumbUrl({ upscale: e.name, factor: e.factor, src: e.src, model: e.model, size: 256 })
+      ? thumbUrl({ upscale: e.name, factor: e.factor, src: e.src, model: e.model, grain: e.grain || 0, size: 256 })
       : thumbUrl({ tex: e.name, size: 256, res: o.src === 'low' ? 'low' : 'hi' });
     const badge = document.createElement('span');
     badge.className = 'up-badge';
     badge.textContent = e.isDone
-      ? `done · ${e.factor}x ${e.model}${e.src === 'low' ? ' · wal' : ''}`
+      ? `done · ${e.factor}x ${e.model}${e.grain ? ' · grain ' + e.grain : ''}${e.src === 'low' ? ' · wal' : ''}`
       : e.regen ? 'regenerate' : `${e.w}×${e.h} → ${e.factor}x`;
     const tick = document.createElement('span');
     tick.className = 'up-tick';
@@ -2425,12 +2427,13 @@ async function upscaleOne(t) {
   const factor = Number(localStorage.getItem('aq2ts.upFactor')) || 4;
   const src = localStorage.getItem('aq2ts.upSrc') === 'low' ? 'low' : 'auto';
   const model = localStorage.getItem('aq2ts.upModel') === 'smooth' ? 'smooth' : 'detail';
+  const grain = [25, 50, 75, 100].includes(Number(localStorage.getItem('aq2ts.upGrain'))) ? Number(localStorage.getItem('aq2ts.upGrain')) : 0;
   try {
     const st = await apiGet('/api/upscale/status');
     if (!st.tool.installed) { toast('The AI upscaler is not installed yet - open ✨ AI upscale… on the map (or the Skin studio) to download it', true); return; }
     if (st.running) { toast(`Busy upscaling ${st.map} - try again when it finishes`, true); return; }
     if (t.swap && t.swap.type === 'upscale') await apiPost('/api/swap', { map, from: t.name, spec: null });
-    const r = await apiPost('/api/upscale/map', { map, factor, minSkip: 100000, src, model, names: [t.name] });
+    const r = await apiPost('/api/upscale/map', { map, factor, minSkip: 100000, src, model, grain, names: [t.name] });
     if (!r.total) {
       toast(t.ext === '.wal' || t.missing
         ? `${t.name}: nothing to upscale (missing file, or already over the 4096 px limit)`
