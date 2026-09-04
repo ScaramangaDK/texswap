@@ -30,7 +30,7 @@ per-frame rigid motion. Check with `--render dir` (7 views) and
 
     $B -b -P tools/hands/rig_pose.py -- arms_uv.blend arms_joints.json pose_m4.json rig_m4.blend          --md2 v_m4/tris.md2 --skin v_m4/skin.png --band arm_band.png --md3 out.md3 --outskin out_skin.png --render dir
 
-Options added later: `thumb_flat` (press the thumb into the palm plane so it rests along the handguard), ortho views in `--render`, `render_md3.py --xray` (see-through gun: the M4 pistol grip is hidden inside the fist, the big block in front of it is the magazine - easy to misread).
+Options added later: `thumb_flat` (press the thumb into the palm plane so it rests along the handguard), ortho views in `--render`, `render_md3.py --xray` (see-through gun).
 
 Notes: `curl_sign` is -1 (bone local X points so that +angle hyperextends);
 `scale` 152 = MakeHuman metres -> gun units for a hand a bit bigger than life.
@@ -54,9 +54,13 @@ Notes: `curl_sign` is -1 (bone local X points so that +angle hyperextends);
   brings it into view at the cost of a slightly different gun position).
 * Finding the numbers: the script prints each hand's bbox / palm centre /
   knuckles at the reference frame; `render_md3.py` renders the MD3, and a
-  wireframe x-z / x-y plot with a unit grid (see the session notes) shows where
-  the grip and handguard really are. On the M4 the pistol grip is at
-  x 20-25, z -18..-30, right face y -24; the handguard at x 50-70.
+  wireframe x-z / x-y plot with a unit grid shows where things are - but
+  identify the parts on a TEXTURED ortho side render (make_scene.py +
+  side_tex.py, grid overlay), not on the wireframe: on the M4 the wireframe
+  block at x 20-25 is the lower edge of the STOCK, not the grip (that mistake
+  cost several iterations). Measured on the texture: pistol grip x 27-34,
+  z -20..-32 (right face y -24); trigger x 35-36, z -19..-22; magazine
+  x 42-52; handguard x 52-70.
 * MD3: gun surface keeps its UVs squeezed into the top band, arms map into the
   lower band; surfaces split at 4000 tris (see md2_to_md3.py).
 
