@@ -2,14 +2,18 @@
 // cached scan results and its swap store.
 import path from 'node:path';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import { GameFS } from './vfs.js';
 import { parseBsp, extractBspGeometry, flagNames } from './bsp.js';
 import { decodePcx, decodeImage } from './decoders.js';
 import { encodePng, resizeRgba } from './thumbs.js';
-import { flatImage } from './gen.js';
+import { flatImage, notextureImage } from './gen.js';
 import { makeThumbPng, resolveImage, sizeOf, TEXTURE_EXTS, TEXTURE_EXTS_LOW } from './thumbs.js';
 import { imageSize } from './decoders.js';
 import { SwapStore, appDataRoot } from './swaps.js';
+import { SkinStore } from './skins.js';
+import { LibraryStore } from './library.js';
+import { TextureUpscaler } from './upscale.js';
 
 const SURF_SKY = 4;
 const SURF_NODRAW = 128;
@@ -106,6 +110,20 @@ export function setModChoice(inputDir, mod) {
   fs.writeFileSync(modChoiceFile(), JSON.stringify(m, null, 2));
 }
 
+// Last install dir the app scanned, so the splash screen can warm the right
+// install before the main page opens.
+const lastDirFile = () => path.join(appDataRoot(), 'lastdir.json');
+export function readLastDir() {
+  try { return JSON.parse(fs.readFileSync(lastDirFile(), 'utf8')).dir || ''; } catch { return ''; }
+}
+export function saveLastDir(dir) {
+  try {
+    if (!dir || readLastDir() === dir) return;
+    fs.mkdirSync(appDataRoot(), { recursive: true });
+    fs.writeFileSync(lastDirFile(), JSON.stringify({ dir }));
+  } catch { /* cosmetic */ }
+}
+
 export class Install {
   constructor(inputDir) {
     const { root, dirs, game, mods, activeMod } = detectInstall(inputDir, readModChoice(inputDir));
@@ -123,6 +141,13 @@ export class Install {
     this.texCatalog = null;
     this.skyCatalog = null;
     this.swaps = new SwapStore(this);
+    this.skins = new SkinStore(this);
+    this.library = new LibraryStore(this);
+    this.upscale = new TextureUpscaler(this);
+    if (this.swaps.pendingHeal) {
+      this.swaps.pendingHeal = false;
+      try { this.swaps.materialize(); } catch { /* healed on next action */ }
+    }
   }
 
   #loadPalette() {
@@ -148,27 +173,76 @@ export class Install {
     return parsed;
   }
 
+  #installKey() {
+    return (this.root + '|' + this.gameDirs.join(',')).toLowerCase();
+  }
+
+  // On-disk scan cache: map entries and texture dims survive restarts, keyed
+  // by the backing file's mtime+size, so a warm start skips parsing every BSP.
+  #loadScanCache() {
+    if (this.scanCache) return this.scanCache;
+    let all = {};
+    try { all = JSON.parse(fs.readFileSync(path.join(appDataRoot(), 'scancache.json'), 'utf8')) || {}; } catch { /* cold */ }
+    this.scanCacheAll = all;
+    const mine = all[this.#installKey()] || {};
+    this.scanCache = mine.maps || {};
+    this.dimsDisk = mine.dims || {};
+    this.scanDirty = 0;
+    return this.scanCache;
+  }
+
+  #saveScanCache() {
+    if (!this.scanDirty) return;
+    const all = this.scanCacheAll || {};
+    all[this.#installKey()] = { at: Date.now(), maps: this.scanCache, dims: this.dimsDisk };
+    const keys = Object.keys(all);
+    if (keys.length > 4) {
+      keys.sort((a, b) => (all[a].at || 0) - (all[b].at || 0));
+      while (keys.length > 4) delete all[keys.shift()];
+    }
+    try {
+      fs.mkdirSync(appDataRoot(), { recursive: true });
+      fs.writeFileSync(path.join(appDataRoot(), 'scancache.json'), JSON.stringify(all));
+      this.scanDirty = 0;
+    } catch { /* cache only */ }
+  }
+
+  #saveSoon() {
+    clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => this.#saveScanCache(), 1500);
+    this.saveTimer.unref?.();
+  }
+
   #mapPath(mapName) {
     return this.fs.list(x => x.startsWith('maps/') && x.endsWith('.bsp'))
       .find(p => path.basename(p, '.bsp') === mapName.toLowerCase());
   }
 
   #mapEntryFor(p) {
+    const cache = this.#loadScanCache();
+    const sk = this.fs.statKey(p);
+    const hit = cache[p];
+    if (hit && sk && hit.k === sk) {
+      return { ...hit.e, swapCount: this.swaps.swapCount(hit.e.name) };
+    }
     const name = path.basename(p, '.bsp');
     const parsed = this.#parseMap(p);
-    if (parsed.error) {
-      return { name, file: p, source: this.fs.sourceOf(p), error: parsed.error };
+    const e = parsed.error
+      ? { name, file: p, source: this.fs.sourceOf(p), error: parsed.error }
+      : {
+        name,
+        file: p,
+        source: this.fs.sourceOf(p),
+        title: cleanTitle(parsed.worldspawn.message),
+        sky: parsed.worldspawn.sky || null,
+        extended: parsed.extended,
+        textureCount: parsed.textures.length,
+      };
+    if (sk) {
+      cache[p] = { k: sk, e };
+      this.scanDirty++;
     }
-    return {
-      name,
-      file: p,
-      source: this.fs.sourceOf(p),
-      title: cleanTitle(parsed.worldspawn.message),
-      sky: parsed.worldspawn.sky || null,
-      extended: parsed.extended,
-      textureCount: parsed.textures.length,
-      swapCount: this.swaps.swapCount(name),
-    };
+    return { ...e, swapCount: this.swaps.swapCount(name) };
   }
 
   listMaps() {
@@ -181,6 +255,7 @@ export class Install {
       .map(p => this.#mapEntryFor(p));
     maps.sort((a, b) => a.name.localeCompare(b.name, 'en'));
     this.mapsCache = maps;
+    this.#saveScanCache();
     return maps;
   }
 
@@ -200,7 +275,32 @@ export class Install {
     maps.sort((a, b) => a.name.localeCompare(b.name, 'en'));
     this.mapsCache = maps;
     this.scanProgress = null;
+    this.#saveScanCache();
+    this.#warmSkiesSoon();
+    // weapon skins live as inline link lines in every map cfg + hook.cfg; an
+    // older TexSwap build rewriting those files would drop them, so restate
+    // them once per start (only files whose content changed are written)
+    if (!this.skinsHealed && this.skins && this.skins.active()) {
+      this.skinsHealed = true;
+      try { this.skins.materialize(); } catch { /* next skin action redoes it */ }
+    }
     return maps;
+  }
+
+  // Pre-decode skybox picker thumbs in the background right after the first
+  // scan (yielding between sets), so the sky dialog's first open is instant.
+  #warmSkiesSoon() {
+    if (this.skiesWarmed) return;
+    this.skiesWarmed = true;
+    const t = setTimeout(async () => {
+      try {
+        for (const s of this.listSkies()) {
+          this.skyThumbPng(s.name);
+          await new Promise(r => setImmediate(r));
+        }
+      } catch { /* warmup only */ }
+    }, 1500);
+    t.unref?.();
   }
 
   mapDetail(mapName, lowRes = false) {
@@ -220,11 +320,7 @@ export class Install {
 
     const textures = parsed.textures.map(t => {
       const hit = resolveImage(this.fs, 'textures/' + t.name, extOrder);
-      let dims = null;
-      if (hit) {
-        const buf = this.fs.read(hit.path);
-        dims = imageSize(buf, hit.ext);
-      }
+      const dims = hit ? this.#texDim(t.name, lowRes) : null;
       const utility = Boolean(t.flags & (SURF_SKY | SURF_NODRAW)) ||
         /(^|\/)(clip|hint|skip|trigger|origin|null)$/.test(t.name);
       return {
@@ -289,17 +385,37 @@ export class Install {
 
   // Dimensions for a batch of picker textures, probed lazily (reading every
   // texture up front takes ~25s on a big install) and cached per name.
-  texDims(names, lowRes = false) {
+  // One texture's dimensions through the layered memory/disk cache; reads
+  // the image file only on a true miss.
+  #texDim(name, lowRes) {
     if (!this.dimsCache) this.dimsCache = new Map();
-    const exts = lowRes ? TEXTURE_EXTS_LOW : TEXTURE_EXTS;
+    this.#loadScanCache();
     const pre = lowRes ? 'L|' : 'H|';
+    let d = this.dimsCache.get(pre + name);
+    if (d === undefined) {
+      const exts = lowRes ? TEXTURE_EXTS_LOW : TEXTURE_EXTS;
+      const hit = resolveImage(this.fs, 'textures/' + name, exts);
+      const sk = hit ? this.fs.statKey(hit.path) : null;
+      const disk = this.dimsDisk[pre + name];
+      if (disk && sk && disk.k === sk) {
+        d = disk.d;
+      } else {
+        d = sizeOf(this.fs, 'textures/' + name, exts) || null;
+        if (sk) {
+          this.dimsDisk[pre + name] = { k: sk, d };
+          this.scanDirty++;
+          this.#saveSoon();
+        }
+      }
+      this.dimsCache.set(pre + name, d);
+    }
+    return d;
+  }
+
+  texDims(names, lowRes = false) {
     const out = {};
     for (const name of names.slice(0, 400)) {
-      let d = this.dimsCache.get(pre + name);
-      if (d === undefined) {
-        d = sizeOf(this.fs, 'textures/' + name, exts) || null;
-        this.dimsCache.set(pre + name, d);
-      }
+      const d = this.#texDim(name, lowRes);
       if (d) out[name] = { w: d.w, h: d.h, ext: d.ext };
     }
     return out;
@@ -324,17 +440,45 @@ export class Install {
     return this.skyCatalog;
   }
 
+  // Decoded thumbs also persist to disk (validated by the source file's
+  // mtime+size), so first-click skybox/texture grids are only slow once ever.
+  #thumbFile(key, sk) {
+    if (!sk) return null;
+    if (!this.thumbDirOk) {
+      try {
+        fs.mkdirSync(path.join(appDataRoot(), 'thumbcache'), { recursive: true });
+        this.thumbDirOk = true;
+      } catch {
+        return null;
+      }
+    }
+    const h = crypto.createHash('sha1').update(this.#installKey() + '|' + key + '|' + sk).digest('hex');
+    return path.join(appDataRoot(), 'thumbcache', h + '.png');
+  }
+
   thumbPng(basePath, maxDim = 128, lowRes = false, alpha255 = false) {
     const key = basePath.toLowerCase() + '@' + maxDim + (lowRes ? '@low' : '') + (alpha255 ? '@a' : '');
     if (this.thumbCache.has(key)) return this.thumbCache.get(key);
+    const exts = lowRes ? TEXTURE_EXTS_LOW : TEXTURE_EXTS;
+    const hit = resolveImage(this.fs, basePath, exts);
+    const dfile = hit ? this.#thumbFile(key, this.fs.statKey(hit.path)) : null;
+    if (dfile) {
+      try {
+        const png = fs.readFileSync(dfile);
+        this.thumbCache.set(key, png);
+        return png;
+      } catch { /* not on disk yet */ }
+    }
     let png = null;
     try {
-      png = makeThumbPng(this.fs, basePath, this.palette, maxDim,
-        lowRes ? TEXTURE_EXTS_LOW : TEXTURE_EXTS, { transparent255: alpha255 });
+      png = makeThumbPng(this.fs, basePath, this.palette, maxDim, exts, { transparent255: alpha255 });
     } catch {
       png = null;
     }
     this.thumbCache.set(key, png);
+    if (png && dfile) {
+      try { fs.writeFileSync(dfile, png); } catch { /* cache only */ }
+    }
     return png;
   }
 
@@ -347,6 +491,77 @@ export class Install {
   skyFacePng(skyName, face) {
     if (!/^(rt|lf|ft|bk|up|dn)$/.test(face)) return null;
     return this.thumbPng('env/' + skyName + face, 1024);
+  }
+
+  // The engine's mapping grid for a texture: the .wal's dims when one
+  // exists (hi-res replacements are squeezed to that grid), else the image's
+  // own dims. This is the tiling frame swaps must be generated in.
+  mappingDims(name) {
+    if (!this.mapDimsCache) this.mapDimsCache = new Map();
+    if (this.mapDimsCache.has(name)) return this.mapDimsCache.get(name);
+    let dims = null;
+    const walBuf = this.fs.read('textures/' + name + '.wal');
+    if (walBuf) dims = imageSize(walBuf, '.wal');
+    if (!dims) {
+      const hit = resolveImage(this.fs, 'textures/' + name);
+      if (hit) dims = imageSize(this.fs.read(hit.path), hit.ext);
+    }
+    const out = dims && dims.w ? { w: dims.w, h: dims.h } : null;
+    this.mapDimsCache.set(name, out);
+    return out;
+  }
+
+  // The player's in-game light settings. `launch` layers files the way the
+  // engine does at startup (q2config.cfg -> autoexec.cfg, later wins); every
+  // OTHER loose cfg in the write dir that sets light cvars becomes an
+  // optional profile (mappers often keep a hand-made "view my maps" cfg
+  // under any name they like), parsed as launch + that file on top. Bare
+  // `cvar value` lines count too - loose cfgs rarely bother with set/seta.
+  engineLighting() {
+    try {
+      const CVARS = {
+        gl_modulate: 'modulate', gl_modulate_world: 'modulateWorld',
+        gl_brightness: 'brightness', vid_gamma: 'gamma', intensity: 'intensity',
+        gl_saturation: 'saturation', gl_coloredlightmaps: 'coloredLightmaps',
+      };
+      const parse = (txt, out) => {
+        let hit = false;
+        for (const [name, key] of Object.entries(CVARS)) {
+          const m = new RegExp(`^\\s*(?:seta?\\s+)?${name}\\s+"?(-?[\\d.]+)`, 'mi').exec(txt);
+          if (m) { out[key] = parseFloat(m[1]); hit = true; }
+        }
+        return hit;
+      };
+      const readTxt = f => {
+        try { return fs.readFileSync(path.join(this.writeDir, f), 'latin1'); } catch { return null; }
+      };
+      const launch = {};
+      const srcs = [];
+      for (const f of ['q2config.cfg', 'autoexec.cfg']) {
+        const t = readTxt(f);
+        if (t && parse(t, launch)) srcs.push(f);
+      }
+      launch.source = srcs.join(' + ') || 'q2config.cfg';
+      const profiles = {};
+      for (const f of fs.readdirSync(this.writeDir)) {
+        if (!/\.cfg$/i.test(f) || /^(q2config|autoexec|config)\.cfg$/i.test(f)) continue;
+        let st;
+        try { st = fs.statSync(path.join(this.writeDir, f)); } catch { continue; }
+        if (!st.isFile() || st.size > 128 * 1024) continue;
+        const t = readTxt(f);
+        if (!t) continue;
+        const p = { ...launch };
+        if (parse(t, p)) {
+          p.source = f;
+          profiles[f] = p;
+          if (Object.keys(profiles).length >= 12) break;
+        }
+      }
+      if (!srcs.length && !Object.keys(profiles).length) return null;
+      return { launch, profiles };
+    } catch {
+      return null;
+    }
   }
 
   // Texture names in a map with no image file anywhere in the install,
@@ -366,11 +581,15 @@ export class Install {
   // with a #5b3b0f brown grid).
   placeholderPng(size = 128) {
     const mf = this.swaps.missingFixConfig();
-    const key = `placeholder@${size}@${mf.color}|${mf.style}|${mf.color2 || ''}|${mf.scale || 1}`;
+    const key = `placeholder@${size}@${mf.enabled ? 'on' : 'off'}|${mf.color}|${mf.style}|${mf.color2 || ''}|${mf.scale || 1}`;
     if (this.thumbCache.has(key)) return this.thumbCache.get(key);
     let png;
     try {
-      png = encodePng(flatImage(mf.color, mf.style, size, mf.color2 || null, mf.scale || 1));
+      png = mf.enabled
+        // fix ON: preview exactly what the fix will link in-game
+        ? encodePng(flatImage(mf.color, mf.style, size, mf.color2 || null, mf.scale || 1))
+        // fix OFF: the engine's real generated notexture (red dots on black)
+        : encodePng(notextureImage(size));
     } catch {
       png = encodePng(flatImage('#0f0f0f', 'grid', size, '#5b3b0f'));
     }

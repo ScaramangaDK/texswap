@@ -5,9 +5,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { getInstall, setModChoice } from './core/scanner.js';
+import { getInstall, setModChoice, readLastDir, saveLastDir } from './core/scanner.js';
 import { flatImage, parseColor } from './core/gen.js';
 import { encodePng } from './core/thumbs.js';
+import { upscalerStatus, installUpscaler } from './core/tools.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const UI_DIR = path.join(ROOT, 'ui');
@@ -15,7 +16,9 @@ const APP_VERSION = (() => {
   try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version; }
   catch { return ''; }
 })();
-const PORT = Number(process.env.PORT || 5892);
+// --port N lets a second copy run next to the packaged app (which owns 5892)
+const argPort = (() => { const i = process.argv.indexOf('--port'); return i > 0 ? process.argv[i + 1] : null; })();
+const PORT = Number(argPort || process.env.PORT || 5892);
 const DEFAULT_DIR = 'C:\\AQ2mapping\\AQ2';
 
 const MIME = {
@@ -59,9 +62,11 @@ function scanResult(inst) {
     hook: inst.swaps.hookStatus(),
     swapsEnabled: inst.swaps.enabled,
     lighting: inst.swaps.lightingConfig(),
+    engineLighting: inst.engineLighting(),
     missingFix: inst.swaps.missingFixConfig(),
     favTextures: inst.swaps.favTextures(),
     favSets: inst.swaps.favSets(),
+    skins: inst.skins.summary(),
     maps: inst.listMaps(),
   };
 }
@@ -105,9 +110,13 @@ async function handleApi(req, url, res) {
         if (!body.map || !body.from || !body.filename || !body.dataB64) {
           return json(res, 400, { error: 'need map, from, filename and dataB64' });
         }
+        if (body.scale !== undefined) {
+          const sc = Number(body.scale);
+          if (!Number.isFinite(sc) || sc < 0.25 || sc > 4) return json(res, 400, { error: 'bad scale (0.25-4)' });
+        }
         const buf = Buffer.from(body.dataB64, 'base64');
         if (buf.length > 16 * 1024 * 1024) return json(res, 400, { error: 'image too large (max 16 MB)' });
-        const result = inst.swaps.setCustomSwap(body.map, body.from, body.filename, buf);
+        const result = inst.swaps.setCustomSwap(body.map, body.from, body.filename, buf, Number(body.scale) || 1);
         return json(res, 200, { ok: true, ...result, detail: inst.mapDetail(body.map, lowRes) });
       }
       case '/api/texdims': {
@@ -144,6 +153,10 @@ async function handleApi(req, url, res) {
       case '/api/swap': {
         if (!body.map || !body.from) return json(res, 400, { error: 'need map and from' });
         if (body.spec) {
+          if (body.spec.scale !== undefined) {
+            const sc = Number(body.spec.scale);
+            if (!Number.isFinite(sc) || sc < 0.25 || sc > 4) return json(res, 400, { error: 'bad scale (0.25-4)' });
+          }
           if (body.spec.type === 'stock') {
             if (!inst.fs.findFirst('textures/' + body.spec.to, ['.png', '.tga', '.jpg', '.wal', '.pcx'])) {
               return json(res, 400, { error: 'replacement texture not found: ' + body.spec.to });
@@ -153,10 +166,6 @@ async function handleApi(req, url, res) {
               parseColor(body.spec.color);
               if (body.spec.color2) parseColor(body.spec.color2);
             } catch (e) { return json(res, 400, { error: e.message }); }
-            if (body.spec.scale !== undefined) {
-              const sc = Number(body.spec.scale);
-              if (!Number.isFinite(sc) || sc < 0.25 || sc > 8) return json(res, 400, { error: 'bad pattern scale' });
-            }
           } else {
             return json(res, 400, { error: 'unknown swap type' });
           }
@@ -186,7 +195,9 @@ async function handleApi(req, url, res) {
           .map(n => path.join(inst.root, n))
           .find(p => fs.existsSync(p));
         if (!exe) return json(res, 400, { error: 'no q2pro.exe / aqtion.exe / quake2.exe found in ' + inst.root });
-        const args = inst.activeMod ? ['+set', 'game', inst.activeMod, '+map', body.map] : ['+map', body.map];
+        // AQ2 installs always run the action mod; plain Q2 uses the picked mod
+        const mod = inst.game === 'aq2' ? 'action' : inst.activeMod;
+        const args = mod ? ['+set', 'game', mod, '+map', body.map] : ['+map', body.map];
         if (body.dry) return json(res, 200, { ok: true, exe, args, launched: false });
         try {
           const child = spawn(exe, args, { cwd: inst.root, detached: true, stdio: 'ignore' });
@@ -225,15 +236,132 @@ async function handleApi(req, url, res) {
         const { obj, file } = inst.swaps.exportMap(body.map);
         return json(res, 200, { ok: true, file, data: obj });
       }
+      case '/api/reveal': {
+        // open Explorer with the exported file selected
+        const f = String(body.file || '');
+        if (!f || !fs.existsSync(f) || !fs.statSync(f).isFile()) {
+          return json(res, 400, { error: 'file not found: ' + f });
+        }
+        spawn('explorer.exe', ['/select,' + path.resolve(f)], { detached: true, stdio: 'ignore' }).unref();
+        return json(res, 200, { ok: true });
+      }
       case '/api/exportpack': {
         try {
           if (body.list) return json(res, 200, { ok: true, maps: inst.swaps.packableMaps() });
-          return json(res, 200, { ok: true, ...inst.swaps.exportPack(body.maps || null) });
+          return json(res, 200, { ok: true, ...inst.swaps.exportPack(body.maps || null, body.name || '', Boolean(body.style)) });
         } catch (e) {
           return json(res, 400, { error: e.message });
         }
       }
+      // ---- Skin studio (weapon models) ----
+      case '/api/skins/upload': {
+        if (!body.name || !body.filename || !body.dataB64) return json(res, 400, { error: 'need name, filename and dataB64' });
+        const buf = Buffer.from(body.dataB64, 'base64');
+        if (buf.length > 48 * 1024 * 1024) return json(res, 400, { error: 'file too large (max 48 MB)' });
+        const ext = path.extname(String(body.filename)).toLowerCase();
+        const label = String(body.label || path.basename(String(body.filename))).slice(0, 60);
+        try {
+          const r = ext === '.md2'
+            ? inst.skins.setModel(body.name, buf, label)
+            : ['.png', '.jpg', '.jpeg', '.tga', '.pcx'].includes(ext)
+              ? inst.skins.setSkinImage(body.name, buf, ext === '.jpeg' ? '.jpg' : ext, label)
+              : null;
+          if (!r) return json(res, 400, { error: 'unsupported file type ' + ext + ' (png, jpg, tga, pcx or md2)' });
+          return json(res, 200, { ok: true, ...r, weapons: inst.skins.listWeapons() });
+        } catch (e) {
+          return json(res, 400, { error: e.message });
+        }
+      }
+      case '/api/skins/upscale': {
+        if (!body.name) return json(res, 400, { error: 'need name' });
+        try {
+          const r = await inst.skins.upscale(body.name, Number(body.scale) || 4, body.model === 'smooth' ? 'smooth' : 'detail');
+          return json(res, 200, { ok: true, ...r, weapons: inst.skins.listWeapons() });
+        } catch (e) {
+          return json(res, 400, { error: e.message });
+        }
+      }
+      case '/api/skins/undo': {
+        try { return json(res, 200, { ok: true, ...inst.skins.undoSkin(body.name), weapons: inst.skins.listWeapons() }); }
+        catch (e) { return json(res, 400, { error: e.message }); }
+      }
+      case '/api/skins/reset': {
+        try { return json(res, 200, { ok: true, ...inst.skins.reset(body.name, body.what || 'all'), weapons: inst.skins.listWeapons() }); }
+        catch (e) { return json(res, 400, { error: e.message }); }
+      }
+      case '/api/skins/enabled': {
+        const r = inst.skins.setEnabled(body.enabled);
+        return json(res, 200, { ok: true, ...r, skins: inst.skins.summary() });
+      }
+      case '/api/skins/export': {
+        try { return json(res, 200, { ok: true, ...inst.skins.exportSkin(body.name, body.title || '') }); }
+        catch (e) { return json(res, 400, { error: e.message }); }
+      }
+      case '/api/skins/template': {
+        // UV template as a file next to the exports, for painting in any editor
+        try {
+          const png = inst.skins.imagePng(body.name, { which: body.which === 'stock' ? 'stock' : 'current', uv: true, maxDim: 4096 });
+          if (!png) return json(res, 400, { error: 'no skin image for ' + body.name });
+          const dir = path.join(inst.writeDir, 'texswap', 'exports');
+          fs.mkdirSync(dir, { recursive: true });
+          const file = path.join(dir, `${body.name}-uv-template.png`);
+          fs.writeFileSync(file, png);
+          return json(res, 200, { ok: true, file });
+        } catch (e) {
+          return json(res, 400, { error: e.message });
+        }
+      }
+      case '/api/library/apply': {
+        try { return json(res, 200, { ok: true, ...inst.library.apply(body.id), weapons: inst.skins.listWeapons() }); }
+        catch (e) { return json(res, 400, { error: e.message }); }
+      }
+      case '/api/library/save': {
+        try { return json(res, 200, { ok: true, ...inst.library.saveCurrent(body.name, body.title || '', body.author || '') }); }
+        catch (e) { return json(res, 400, { error: e.message }); }
+      }
+      case '/api/library/delete': {
+        try { return json(res, 200, { ok: true, ...inst.library.delete(body.id) }); }
+        catch (e) { return json(res, 400, { error: e.message }); }
+      }
+      case '/api/library/refresh': {
+        inst.library.refresh();
+        return json(res, 200, { ok: true });
+      }
+      // ---- AI upscale of a map's textures ----
+      case '/api/upscale/map': {
+        if (!body.map) return json(res, 400, { error: 'need map' });
+        try {
+          const r = inst.upscale.start(body.map, {
+            factor: Number(body.factor) || 4,
+            minSkip: Number(body.minSkip) || 1024,
+            model: body.model === 'smooth' ? 'smooth' : 'detail',
+            names: Array.isArray(body.names) ? body.names.map(String) : null,
+            src: body.src === 'low' ? 'low' : 'auto',
+          });
+          return json(res, 200, { ok: true, ...r, status: inst.upscale.status() });
+        } catch (e) {
+          return json(res, 409, { error: e.message });
+        }
+      }
+      case '/api/upscale/cancel': {
+        inst.upscale.cancel();
+        return json(res, 200, { ok: true, status: inst.upscale.status() });
+      }
+      case '/api/upscale/remove': {
+        if (!body.map) return json(res, 400, { error: 'need map' });
+        const r = inst.swaps.removeUpscales(body.map);
+        return json(res, 200, { ok: true, ...r, detail: inst.mapDetail(body.map, lowRes) });
+      }
+      case '/api/tools/install': {
+        installUpscaler();
+        return json(res, 200, { ok: true, tool: upscalerStatus() });
+      }
       case '/api/import': {
+        if (body.data && body.data.kind === 'skin') {
+          // friends' skins join the collection and become the active skin
+          try { return json(res, 200, { ok: true, kind: 'skin', ...inst.library.importSkin(body.data, true) }); }
+          catch (e) { return json(res, 400, { error: e.message }); }
+        }
         const result = body.data && body.data.kind === 'pack'
           ? inst.swaps.importPack(body.data)
           : inst.swaps.importMap(body.data);
@@ -246,10 +374,14 @@ async function handleApi(req, url, res) {
 
   const dir = q.get('dir') || DEFAULT_DIR;
   switch (url.pathname) {
-    case '/api/defaults':
+    case '/api/defaults': {
+      const last = readLastDir();
+      if (last && fs.existsSync(last)) return json(res, 200, { dir: last });
       return json(res, 200, { dir: fs.existsSync(DEFAULT_DIR) ? DEFAULT_DIR : '' });
+    }
 
     case '/api/scan': {
+      saveLastDir(q.get('dir') || '');
       const inst = getInstall(dir, q.get('refresh') === '1');
       if (!inst.mapsCache) {
         // first scan of a big install takes 10s+: run it async and let the
@@ -309,6 +441,66 @@ async function handleApi(req, url, res) {
       return res.end(atlasPng);
     }
 
+    case '/api/skins': {
+      const inst = getInstall(dir);
+      return json(res, 200, { ...inst.skins.summary(), weapons: inst.skins.listWeapons(), tool: upscalerStatus() });
+    }
+
+    case '/api/skins/model': {
+      const name = q.get('name');
+      if (!name) return json(res, 400, { error: 'missing ?name=' });
+      try { return json(res, 200, getInstall(dir).skins.clientModel(name)); }
+      catch (e) { return json(res, 400, { error: e.message }); }
+    }
+
+    case '/api/skins/image': {
+      const name = q.get('name');
+      if (!name) return json(res, 400, { error: 'missing ?name=' });
+      let png = null;
+      try {
+        png = getInstall(dir).skins.imagePng(name, {
+          which: q.get('which') === 'stock' ? 'stock' : 'current',
+          uv: q.get('uv') === '1',
+          maxDim: Math.min(4096, Number(q.get('size')) || 2048),
+        });
+      } catch (e) {
+        return json(res, 400, { error: e.message });
+      }
+      if (!png) { res.writeHead(404); return res.end(); }
+      // the URL carries a version stamp from the client; never trust a stale copy
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'max-age=30' });
+      return res.end(png);
+    }
+
+    case '/api/library': {
+      const inst = getInstall(dir);
+      return json(res, 200, { entries: inst.library.list(q.get('weapon') || null) });
+    }
+
+    case '/api/library/thumb': {
+      const png = getInstall(dir).library.thumbPng(q.get('id') || '', Math.min(1024, Number(q.get('size')) || 256));
+      if (!png) { res.writeHead(404); return res.end(); }
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'max-age=600' });
+      return res.end(png);
+    }
+
+    case '/api/upscale/plan': {
+      const name = q.get('name');
+      if (!name) return json(res, 400, { error: 'missing ?name=' });
+      try {
+        const plan = getInstall(dir).upscale.plan(name, { factor: Number(q.get('factor')) || 4, minSkip: Number(q.get('minSkip')) || 1024, src: q.get('src') === 'low' ? 'low' : 'auto', model: q.get('model') === 'smooth' ? 'smooth' : 'detail' });
+        return json(res, 200, { ...plan, tool: upscalerStatus() });
+      } catch (e) {
+        return json(res, 400, { error: e.message });
+      }
+    }
+
+    case '/api/upscale/status':
+      return json(res, 200, getInstall(dir).upscale.status());
+
+    case '/api/tools/status':
+      return json(res, 200, { tool: upscalerStatus() });
+
     case '/api/textures':
       return json(res, 200, { textures: getInstall(dir).listTextures() });
 
@@ -318,7 +510,7 @@ async function handleApi(req, url, res) {
     case '/api/skyface': {
       const png = getInstall(dir).skyFacePng(q.get('sky') || '', q.get('face') || '');
       if (!png) { res.writeHead(404); return res.end(); }
-      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'max-age=600' });
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'max-age=86400' });
       return res.end(png);
     }
 
@@ -336,13 +528,14 @@ async function handleApi(req, url, res) {
 
     case '/api/thumb': {
       const inst = getInstall(dir);
-      const size = Math.min(512, Number(q.get('size')) || 128);
+      const size = Math.min(1024, Number(q.get('size')) || 128);
       let png = null;
       if (q.get('tex')) {
         png = inst.thumbPng('textures/' + q.get('tex'), size, q.get('res') === 'low', q.get('alpha') === '1')
           || inst.placeholderPng(size);
       }
       else if (q.get('custom')) png = inst.customThumbPng(q.get('custom'), size);
+      else if (q.get('upscale')) png = inst.upscale.thumbPng(q.get('upscale'), Number(q.get('factor')) || 4, size, q.get('src') === 'low' ? 'low' : 'auto', q.get('model') === 'smooth' ? 'smooth' : 'detail') || inst.thumbPng('textures/' + q.get('upscale'), size);
       else if (q.get('sky')) png = inst.skyThumbPng(q.get('sky'), size);
       else if (q.get('flat')) {
         // generate at the requested size directly - resampling a fixed-size
@@ -352,7 +545,10 @@ async function handleApi(req, url, res) {
         } catch { png = null; }
       } else return json(res, 400, { error: 'missing ?tex=, ?sky= or ?flat=' });
       if (!png) { res.writeHead(404); return res.end(); }
-      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'max-age=600' });
+      // user-uploaded files can be replaced under the same name - keep those
+      // fresh; install textures/skies only change on rescan (which busts URLs)
+      const age = q.get('custom') ? 600 : 86400;
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'max-age=' + age });
       return res.end(png);
     }
 

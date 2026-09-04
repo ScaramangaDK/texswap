@@ -62,20 +62,27 @@ async function fillDims(batch, cells) {
 // defringe tweaks...) - thumbs are browser-cached for 10 min per URL, so a
 // new version busts every stale copy at once. bustThumbs() does the same
 // at runtime (e.g. after the missing-texture style changes).
-let THUMB_V = '2';
+let THUMB_V = '4';
 function bustThumbs() {
-  THUMB_V = '2-' + Date.now();
+  THUMB_V = '4-' + Date.now();
 }
 function thumbUrl(params) {
   const url = new URL('/api/thumb', location.origin);
-  url.searchParams.set('v', THUMB_V);
+  // the missing-fix state is part of the URL: toggling or restyling the fix
+  // re-fetches every placeholder instantly instead of trusting a stale cache
+  const mf = (state.scan && state.scan.missingFix) || {};
+  const mfTok = mf.enabled
+    ? 'f' + String(mf.color + (mf.style || '') + (mf.color2 || '') + (mf.scale || 1)).replace(/#/g, '')
+    : 'off';
+  url.searchParams.set('v', THUMB_V + '-' + mfTok);
   url.searchParams.set('dir', state.dir);
   url.searchParams.set('res', state.res);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   return url.toString();
 }
 
-function swapThumbUrl(spec, size) {
+function swapThumbUrl(spec, size, name = '') {
+  if (spec.type === 'upscale') return thumbUrl({ upscale: name, factor: spec.factor || 4, size, src: spec.src === 'low' ? 'low' : 'auto', model: spec.model === 'smooth' ? 'smooth' : 'detail' });
   if (spec.type === 'flat') {
     const p = { flat: spec.color, style: spec.style || 'solid', size };
     if (spec.color2) p.color2 = spec.color2;
@@ -91,6 +98,7 @@ function swapLabel(spec) {
   switch (spec.type) {
     case 'flat': return `→ flat ${spec.color}${spec.style && spec.style !== 'solid' ? ` · ${spec.style}${spec.scale && spec.scale !== 1 ? ` ${spec.scale}×` : ''}${spec.color2 ? ' ' + spec.color2 : ''}` : ''}`;
     case 'custom': return `→ your image${spec.w ? ` (${spec.w}×${spec.h})` : ''}`;
+    case 'upscale': return `→ AI upscaled ${spec.factor || 4}x${spec.model === 'smooth' ? ' smooth' : ''}${spec.src === 'low' ? ' from the original .wal' : ''}${state.res === 'low' ? ' - not in low-res mode, showing the .wal' : ' (hi-res mode)'}`;
     case 'invisible': return '→ invisible';
     default: return `→ ${spec.to}`;
   }
@@ -172,6 +180,9 @@ async function rescan(refresh) {
   state.catalog = null;
   state.skies = null;
   mapTexCache.clear();
+  // thumbs are browser-cached long-term; a manual rescan means files may
+  // have changed on disk, so force fresh thumb URLs
+  if (refresh) bustThumbs();
   const oldDl = document.getElementById('mapNamesData');
   if (oldDl) oldDl.remove();
   showBanner(null);
@@ -285,6 +296,18 @@ function renderHook() {
   light.addEventListener('click', () => openLighting('global'));
   area.appendChild(light);
 
+  const skins = document.createElement('button');
+  const skOn = state.scan.skins && state.scan.skins.enabled && state.scan.skins.active > 0;
+  skins.innerHTML = skOn ? '🔫 Weapon skins<span class="dot"></span>' : '🔫 Weapon skins';
+  skins.title = skOn
+    ? `Skin studio - ${state.scan.skins.active} custom weapon${state.scan.skins.active === 1 ? '' : 's'} active in game`
+    : 'Skin studio - reskin or replace the weapon models you see in your hands';
+  skins.addEventListener('click', () => {
+    if (window.AQSkins) window.AQSkins.open();
+    else toast('Skin studio failed to load', true);
+  });
+  area.appendChild(skins);
+
   const miss = document.createElement('button');
   const mfOn = state.scan.missingFix && state.scan.missingFix.enabled;
   miss.innerHTML = mfOn ? '🧱 Missing tex<span class="dot"></span>' : '🧱 Missing tex';
@@ -325,22 +348,54 @@ async function openExportPack() {
       <button class="mclose">✕</button>
     </div>
     <div class="mbody">
-      <p class="mnote">One file with the <b>texture swaps</b> of every map below — sky and lighting
-      are individual preference and stay out. Friends load it with <b>Import preset…</b> and their
-      own sky/lighting are untouched.</p>
-      <p class="mono" style="line-height:1.9">${maps.map(m => `<span class="badge">${m}</span>`).join(' ')}</p>
-      <div class="mfoot"><button class="primary" id="packGo">Create pack (${maps.length} map${maps.length === 1 ? '' : 's'})</button></div>
+      <p class="mnote">One file with the <b>texture swaps</b> of the selected maps — friends load it
+      with <b>Import preset…</b> Click the maps you want in the pack.</p>
+      <div class="mfgrid">
+        <span class="mflbl">Maps</span>
+        <div>
+          <div class="packchips">${maps.map(m =>
+    `<span class="badge packbadge${m === (state.detail && state.detail.name) ? ' sel' : ''}" data-map="${m}">${m}</span>`).join('')}</div>
+          <label class="packopt"><input type="checkbox" id="packAll"> select all (${maps.length})</label>
+        </div>
+        <span class="mflbl">Pack name</span>
+        <div>
+          <input id="packName" class="namefield" maxlength="48" placeholder="empty = auto (map + loaded preset name)">
+          <label class="packopt" title="Off: receivers keep their own sky and lighting on these maps">
+            <input type="checkbox" id="packStyle"> include my sky &amp; lighting (full style export)</label>
+        </div>
+      </div>
+      <div class="mfoot">
+        <button class="primary" id="packGo"></button>
+      </div>
     </div>
   `);
-  $('packGo').addEventListener('click', async () => {
+  const go = $('packGo');
+  const all = $('packAll');
+  const chips = [...document.querySelectorAll('.packbadge')];
+  const selected = () => chips.filter(b => b.classList.contains('sel')).map(b => b.dataset.map);
+  const syncGo = () => {
+    const n = selected().length;
+    go.textContent = `Create pack (${n} map${n === 1 ? '' : 's'})`;
+    go.disabled = n === 0;
+    all.checked = n === maps.length;
+  };
+  chips.forEach(b =>
+    b.addEventListener('click', () => { b.classList.toggle('sel'); syncGo(); }));
+  all.addEventListener('change', () => {
+    chips.forEach(b => b.classList.toggle('sel', all.checked));
+    syncGo();
+  });
+  syncGo();
+  go.addEventListener('click', async () => {
     try {
-      const r = await apiPost('/api/exportpack', {});
+      const r = await apiPost('/api/exportpack', { maps: selected(), name: $('packName').value.trim(), style: $('packStyle').checked });
       closeModal();
-      toast(`Packed ${r.count} maps! Send this file to your friends: ${r.file}`);
+      exportDoneModal(`Team pack with <b>${r.count} map${r.count === 1 ? '' : 's'}</b> created.`, r.file);
     } catch (e) {
       toast('Pack failed: ' + e.message, true);
     }
   });
+  $('packName').addEventListener('keydown', e => { if (e.key === 'Enter' && !go.disabled) go.click(); });
 }
 
 async function toggleEnabled() {
@@ -369,7 +424,11 @@ async function importPresetFile(file) {
   try {
     const r = await apiPost('/api/import', { data });
     for (const w of (r.warnings || []).slice(0, 6)) toast(w, true);
-    if (r.pack) {
+    if (r.kind === 'skin') {
+      toast(`Imported weapon skin: ${r.label} - restart the map in game to see it`);
+      if (window.AQSkins) window.AQSkins.refresh();
+      if (state.scan) rescan(false);
+    } else if (r.pack) {
       toast(`Imported team pack: texture swaps for ${r.count} map${r.count === 1 ? '' : 's'}`);
       if (state.detail && r.maps && r.maps.includes(state.detail.name)) {
         await selectMap(state.detail.name);
@@ -519,6 +578,10 @@ function renderPresetRow() {
     });
     chip.append(txt, del);
     chip.addEventListener('click', async () => {
+      // loading replaces the working state - never silently over changes
+      if (d.swapCount > 0 && !confirm(
+        `Load preset "${name}"?\n\nThis REPLACES the current swaps on ${d.name}. ` +
+        'Changes you have not saved as a preset will be lost.')) return;
       try {
         applyMutation(await apiPost('/api/preset/load', { map: d.name, name }));
         toast(`Loaded preset "${name}" - F9 in game to see it`);
@@ -535,13 +598,6 @@ function renderPresetRow() {
   save.addEventListener('click', openSavePreset);
   row.appendChild(save);
 
-  const exp = document.createElement('button');
-  exp.className = 'small';
-  exp.textContent = 'Export…';
-  exp.disabled = !d.swapCount;
-  exp.title = d.swapCount ? 'Write a shareable .aq2swap.json file for this map' : 'Add some swaps first';
-  exp.addEventListener('click', exportCurrent);
-  row.appendChild(exp);
 }
 
 function openSavePreset() {
@@ -552,8 +608,10 @@ function openSavePreset() {
       <button class="mclose">✕</button>
     </div>
     <div class="mbody">
-      <p style="color:var(--dim);margin-bottom:10px">Saves the current ${d.swapCount} swap(s) under a name you can reload anytime.</p>
-      <input id="presetName" class="namefield" maxlength="24" placeholder="e.g. comp, bright, chill…">
+      <p style="color:var(--dim);margin-bottom:10px">Saves the current ${d.swapCount} swap(s) under a name you can reload anytime.
+      Presets are snapshots — later changes are NOT saved into them until you save again (same name = update).</p>
+      <input id="presetName" class="namefield" maxlength="24" placeholder="e.g. comp, bright, chill…"
+        value="${d.activePreset || ''}">
     </div>
     <div class="mfoot">
       <button class="primary" id="presetSaveBtn">Save</button>
@@ -575,14 +633,40 @@ function openSavePreset() {
   $('presetName').focus();
 }
 
-async function exportCurrent() {
-  const d = state.detail;
-  try {
-    const r = await apiPost('/api/export', { map: d.name });
-    toast(`Exported! Send this file to your friends: ${r.file}`);
-  } catch (e) {
-    toast('Export failed: ' + e.message, true);
-  }
+// Centered confirmation with the full path - a corner toast is gone before
+// anyone can read where the file went.
+function exportDoneModal(what, file) {
+  openModal(`
+    <div class="mhead">
+      <h3>📦 Export complete</h3>
+      <button class="mclose">✕</button>
+    </div>
+    <div class="mbody">
+      <p class="mnote">${what} Send the file to your friends — they load it with <b>Import preset…</b></p>
+      <p class="mono exportpath" id="expPath">${file}</p>
+    </div>
+    <div class="mfoot">
+      <button id="expCopy">📋 Copy path</button>
+      <button id="expReveal">📂 Show in folder</button>
+      <button class="primary" id="expClose">Close</button>
+    </div>
+  `);
+  $('expClose').addEventListener('click', closeModal);
+  $('expCopy').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(file);
+      toast('Path copied to clipboard');
+    } catch {
+      const rng = document.createRange();
+      rng.selectNodeContents($('expPath'));
+      const sel = getSelection();
+      sel.removeAllRanges();
+      sel.addRange(rng);
+      toast('Could not copy automatically — the path is selected, press Ctrl+C', true);
+    }
+  });
+  $('expReveal').addEventListener('click', () =>
+    apiPost('/api/reveal', { file }).catch(e => toast('Could not open folder: ' + e.message, true)));
 }
 
 function renderGrid() {
@@ -607,7 +691,10 @@ function renderGrid() {
 
     const wrap = document.createElement('div');
     wrap.className = 'imgwrap';
-    const mainSrc = t.swap ? swapThumbUrl(t.swap, 128) : thumbUrl({ tex: t.name });
+    // an AI upscale only exists in hi-res mode: the low-res preview shows
+    // the .wal the game really reads there
+    const upscaleHidden = t.swap && t.swap.type === 'upscale' && state.res === 'low';
+    const mainSrc = t.swap && !upscaleHidden ? swapThumbUrl(t.swap, 128, t.name) : thumbUrl({ tex: t.name });
     if (t.swap && t.swap.type === 'invisible') {
       wrap.innerHTML = '<span class="missing">👻 invisible</span>';
     } else {
@@ -621,11 +708,17 @@ function renderGrid() {
     card.appendChild(wrap);
 
     if (t.swap) {
+      const selfResize = t.swap.type === 'stock' && t.swap.to === t.name;
+      const sc = t.swap.scale && t.swap.scale !== 1 ? t.swap.scale + 'x' : '';
       const tag = document.createElement('span');
       tag.className = 'swaptag';
-      tag.textContent = t.swap.type === 'flat' ? 'FLAT' : 'SWAP';
+      tag.textContent = t.swap.type === 'flat' ? 'FLAT'
+        : t.swap.type === 'upscale' ? `AI ${t.swap.factor || 4}x`
+        : selfResize ? (sc || 'SIZE')
+          : sc ? `SWAP · ${sc}` : 'SWAP';
+      if (selfResize) tag.title = `Original texture at ${sc} size`;
       card.appendChild(tag);
-      {
+      if (!selfResize && t.swap.type !== 'upscale') {
         const orig = document.createElement('img');
         orig.className = 'origthumb';
         orig.loading = 'lazy';
@@ -636,7 +729,7 @@ function renderGrid() {
       const rm = document.createElement('button');
       rm.className = 'removebtn';
       rm.textContent = '✕';
-      rm.title = 'Remove this swap';
+      rm.title = selfResize ? 'Back to original size' : 'Remove this swap';
       rm.addEventListener('click', ev => { ev.stopPropagation(); setSwap(t.name, null); });
       card.appendChild(rm);
     }
@@ -720,7 +813,7 @@ async function resetMap() {
 function openModal(html) {
   $('modal').innerHTML = html;
   $('modalOverlay').classList.remove('hidden');
-  $('modal').querySelector('.mclose').addEventListener('click', closeModal);
+  $('modal').querySelectorAll('.mclose').forEach(b => b.addEventListener('click', closeModal));
 }
 
 function closeModal() {
@@ -753,10 +846,19 @@ async function openPicker(t) {
       <button id="tabFlat">Flat / clean</button>
       <button id="tabCustom">Your image</button>
     </div>
+    <div class="flatrow sizerow" id="swapSizeBar"></div>
     <div class="mbody" id="mbody"></div>
     <div class="mfoot" id="mfoot"></div>
   `);
+  renderSwapSizeBar(t);
   const foot = $('mfoot');
+  if (!t.missing && !t.utility && (!t.swap || t.swap.type === 'upscale')) {
+    const up = document.createElement('button');
+    up.textContent = t.swap ? '✨ AI upscale again…' : '✨ AI upscale this texture';
+    up.title = 'Redraw just this texture at a higher resolution (hi-res mode only; tiling untouched)';
+    up.addEventListener('click', () => { closeModal(); upscaleOne(t); });
+    foot.appendChild(up);
+  }
   if (t.swap) {
     const rm = document.createElement('button');
     rm.className = 'danger';
@@ -823,6 +925,7 @@ function renderCustomTab(t) {
         from: t.name,
         filename: picked.name,
         dataB64: btoa(bin),
+        scale: pickerSize !== 1 ? pickerSize : undefined,
       }));
       toast('Your image is in - F9 in game to see it');
     } catch (e) {
@@ -831,11 +934,68 @@ function renderCustomTab(t) {
   });
 }
 
+// One size bar for the whole picker: with an existing stock/custom swap a
+// click resizes it IMMEDIATELY (no re-picking); it also sets the size used
+// when a new texture is picked. 0.5x = pattern twice as dense on the wall.
+let pickerSize = 1;
+// when the Flat tab is open it registers a mirror here, so the top size bar
+// updates the tab's pattern previews live instead of drifting out of sync
+let flatScaleSync = null;
+function renderSwapSizeBar(t) {
+  const bar = $('swapSizeBar');
+  // solid flats have no pattern to scale; every other swap resizes in place
+  const hasResizableSwap = t.swap && (t.swap.type === 'stock' || t.swap.type === 'custom'
+    || (t.swap.type === 'flat' && t.swap.style !== 'solid'));
+  const canSelf = !t.swap && !t.missing; // resize the ORIGINAL texture itself
+  pickerSize = (hasResizableSwap && t.swap.scale) || 1;
+  const hint = hasResizableSwap ? 'resizes the current swap right away'
+    : canSelf ? 'resizes THIS texture right away — or pick a replacement below'
+      : 'applies to the texture you pick';
+  bar.innerHTML = '<span class="count">Size on walls:</span>' +
+    [0.25, 0.5, 1, 2, 4].map(s =>
+      `<button class="scbtn${s === pickerSize ? ' sel' : ''}" data-sc="${s}">${s}x</button>`).join('') +
+    `<span class="count">${hint}</span>`;
+  bar.querySelectorAll('.scbtn').forEach(b => b.addEventListener('click', async () => {
+    pickerSize = Number(b.dataset.sc);
+    bar.querySelectorAll('.scbtn').forEach(x =>
+      x.classList.toggle('sel', Number(x.dataset.sc) === pickerSize));
+    if (flatScaleSync) flatScaleSync(pickerSize);
+    let spec;
+    if (hasResizableSwap) {
+      spec = { ...t.swap };
+      if (pickerSize !== 1) spec.scale = pickerSize;
+      else delete spec.scale;
+      // a self-resize back at 1x is no swap at all - drop it entirely
+      if (spec.type === 'stock' && spec.to === t.name && !spec.scale) spec = null;
+    } else if (canSelf) {
+      if (pickerSize === 1) return; // already the original
+      spec = { type: 'stock', to: t.name, scale: pickerSize };
+    } else {
+      return; // solid flat or missing texture: chips only set the pick default
+    }
+    try {
+      applyMutation(await apiPost('/api/swap', { map: state.detail.name, from: t.name, spec }));
+      t.swap = spec;
+      toast(spec
+        ? `Size ${pickerSize}x applied - F9 in game to see it`
+        : 'Back to the original texture');
+      renderSwapSizeBar(t);
+    } catch (e) {
+      toast('Resize failed: ' + e.message, true);
+    }
+  }));
+}
+
 async function renderStockTab(t) {
   await buildTextureBrowser($('mbody'), {
     exclude: t.name,
     currentTo: t.swap && t.swap.type === 'stock' ? t.swap.to : null,
-    onPick: name => { closeModal(); setSwap(t.name, { type: 'stock', to: name }); },
+    onPick: name => {
+      closeModal();
+      const spec = { type: 'stock', to: name };
+      if (pickerSize !== 1) spec.scale = pickerSize;
+      setSwap(t.name, spec);
+    },
   });
 }
 
@@ -901,7 +1061,9 @@ async function buildTextureBrowser(body, opts = {}) {
     $('pickGrid').style.gridTemplateColumns =
       colsSel.value === 'auto' ? '' : `repeat(${colsSel.value}, 1fr)`;
   };
-  const thumbSizeForCols = () => ({ 4: 192, 5: 160, 6: 128, 8: 96 }[colsSel.value] || 96);
+  // request thumbs at roughly the on-screen card width - undersized thumbs
+  // get upscaled by the browser and details go mushy
+  const thumbSizeForCols = () => ({ 4: 320, 5: 256, 6: 224, 8: 160 }[colsSel.value] || 160);
   const src = state.scan || state.detail || {};
   const favs = new Set(src.favTextures || []);
   let sets = { ...(src.favSets || {}) };
@@ -949,6 +1111,41 @@ async function buildTextureBrowser(body, opts = {}) {
   let rendered = 0;
   const BATCH = 240;
 
+  // hover zoom: hold the mouse over a card to inspect the texture at 512px
+  let zoomEl = document.getElementById('pickZoom');
+  if (!zoomEl) {
+    zoomEl = document.createElement('div');
+    zoomEl.id = 'pickZoom';
+    zoomEl.style.cssText = 'position:fixed;z-index:400;pointer-events:none;display:none;'
+      + 'background:#0d0d0f;border:1px solid #444;border-radius:6px;padding:6px;'
+      + 'box-shadow:0 8px 30px rgba(0,0,0,.7)';
+    zoomEl.innerHTML = '<img style="display:block;width:480px;height:480px;object-fit:contain">'
+      + '<div class="mono" style="color:#aaa;font-size:11px;padding-top:4px;text-align:center"></div>';
+    document.body.appendChild(zoomEl);
+    document.addEventListener('scroll', () => { zoomEl.style.display = 'none'; }, true);
+  }
+  const zoomImg = zoomEl.querySelector('img');
+  const zoomCap = zoomEl.querySelector('div');
+  let zoomTimer = 0;
+  const zoomHide = () => { clearTimeout(zoomTimer); zoomEl.style.display = 'none'; };
+  const zoomPlace = ev => {
+    const W = 492, H = 516;
+    let x = ev.clientX + 22;
+    if (x + W > innerWidth - 8) x = ev.clientX - W - 22;
+    const y = Math.max(8, Math.min(innerHeight - H - 8, ev.clientY - H / 2));
+    zoomEl.style.left = x + 'px';
+    zoomEl.style.top = y + 'px';
+  };
+  const zoomShow = (c, ev) => {
+    clearTimeout(zoomTimer);
+    zoomTimer = setTimeout(() => {
+      zoomImg.src = thumbUrl({ tex: c.name, size: 512 });
+      zoomCap.textContent = c.name + '  ·  ' + (texDimsCache.get(dimKey(c.name)) || '');
+      zoomEl.style.display = 'block';
+      zoomPlace(ev);
+    }, 220);
+  };
+
   const makeCell = c => {
       const cell = document.createElement('div');
       cell.className = 'pickcell' + (opts.currentTo === c.name ? ' current' : '');
@@ -956,6 +1153,10 @@ async function buildTextureBrowser(body, opts = {}) {
       img.loading = 'lazy';
       img.src = thumbUrl({ tex: c.name, size: thumbSizeForCols() });
       img.addEventListener('error', () => { img.style.visibility = 'hidden'; });
+      cell.addEventListener('mouseenter', ev => zoomShow(c, ev));
+      cell.addEventListener('mousemove', ev => { if (zoomEl.style.display === 'block') zoomPlace(ev); });
+      cell.addEventListener('mouseleave', zoomHide);
+      cell.addEventListener('click', zoomHide);
       const label = document.createElement('div');
       label.className = 'pname';
       label.textContent = c.name;
@@ -1155,6 +1356,7 @@ const FLAT_STYLES = [
   { id: 'checker', label: 'checker' },
   { id: 'stripes', label: 'stripes' },
   { id: 'diag', label: 'diagonal' },
+  { id: 'diamond', label: 'diamond' },
 ];
 
 // Read the (flat) color of a loaded same-origin thumbnail image.
@@ -1184,6 +1386,8 @@ async function renderFlatTab(t) {
       <img id="flatPreview" class="flatpreview" alt="preview">
       <button class="primary" id="flatApply">Use this</button>
     </div>
+    <p class="mnote" style="margin:6px 0 4px">…or pick the base color from the Quake 2 palette:</p>
+    <div class="palgrid" id="palGridBase"></div>
     <div id="patternSection" class="hidden">
       <div class="sectionhead">Pattern color &amp; size</div>
       <div class="flatrow">
@@ -1220,6 +1424,8 @@ async function renderFlatTab(t) {
     color2Input.value = color2 || autoShade();
     $('palGrid').querySelectorAll('.palswatch').forEach(x =>
       x.classList.toggle('sel', !!color2 && x.dataset.c === color2));
+    $('palGridBase').querySelectorAll('.palswatch').forEach(x =>
+      x.classList.toggle('sel', x.dataset.c.toLowerCase() === colorInput.value.toLowerCase()));
     patSection.querySelectorAll('.scbtn').forEach(x =>
       x.classList.toggle('sel', Number(x.dataset.sc) === scale));
   };
@@ -1247,22 +1453,30 @@ async function renderFlatTab(t) {
     preview.src = thumbUrl(thumbParams(colorInput.value, style, 96));
   };
 
-  // Quake 2 palette swatches for the pattern color
+  // Quake 2 palette swatches: one grid for the base color (all styles,
+  // solid included), one for the pattern color
   try {
     const pal = await fetch(`/api/palette?dir=${encodeURIComponent(state.dir)}`).then(r => r.json());
-    const grid = $('palGrid');
-    for (const c of pal.colors || []) {
-      const b = document.createElement('button');
-      b.className = 'palswatch';
-      b.style.background = c;
-      b.title = c;
-      b.dataset.c = c;
-      b.addEventListener('click', () => {
-        color2 = c;
-        renderStyles(); updatePreview(); syncPattern();
-      });
-      grid.appendChild(b);
-    }
+    const fill = (grid, onPick) => {
+      for (const c of pal.colors || []) {
+        const b = document.createElement('button');
+        b.className = 'palswatch';
+        b.style.background = c;
+        b.title = c;
+        b.dataset.c = c;
+        b.addEventListener('click', () => onPick(c));
+        grid.appendChild(b);
+      }
+    };
+    fill($('palGridBase'), c => {
+      colorInput.value = c;
+      color = c;
+      renderStyles(); updatePreview(); updateRalleHint(); syncPattern();
+    });
+    fill($('palGrid'), c => {
+      color2 = c;
+      renderStyles(); updatePreview(); syncPattern();
+    });
   } catch { /* no palette - the color input still works */ }
   patSection.querySelectorAll('.scbtn').forEach(b =>
     b.addEventListener('click', () => { scale = Number(b.dataset.sc); renderStyles(); updatePreview(); syncPattern(); }));
@@ -1308,12 +1522,22 @@ async function renderFlatTab(t) {
     closeModal();
     const spec = { type: 'flat', color: colorInput.value, style };
     if (style !== 'solid' && color2) spec.color2 = color2;
-    if (style !== 'solid' && scale !== 1) spec.scale = scale;
+    // the tab's own pattern-size wins; the top size bar is the fallback default
+    const sc = scale !== 1 ? scale : pickerSize;
+    if (style !== 'solid' && sc !== 1) spec.scale = sc;
     setSwap(t.name, spec);
   });
   renderStyles();
   updatePreview();
   syncPattern();
+  flatScaleSync = sc => {
+    // tab may have been switched away since; drop the stale mirror then
+    if (!document.getElementById('styleRow')) { flatScaleSync = null; return; }
+    scale = sc;
+    renderStyles();
+    updatePreview();
+    syncPattern();
+  };
 
   // Quake-palette flats (ralle_colors) if this install has them
   const catalog = await ensureCatalog();
@@ -1504,7 +1728,8 @@ async function openMissingFix() {
     <div class="mbody">
       <p class="mnote">Maps often use textures your install doesn't have. Pick a stand-in style —
       the app shows it on every missing texture, and with the fix enabled it is applied
-      <b>in game across all maps</b> too. Textures you swap yourself always win over this.</p>
+      <b>in game across all maps</b> too. Textures you swap yourself always win over this.
+      While the fix is <b>off</b>, missing textures show as the game's classic red-dotted notexture.</p>
       <div class="mfgrid">
         <span class="mflbl">Style</span>
         <div class="stylerow" id="mfStyles"></div>
@@ -1618,7 +1843,7 @@ async function openMissingFix() {
       if (r.missingFix.enabled) {
         toast(`Missing-texture fix is ON - ${(r.written || []).length} cfg(s) updated, F9 in game to see it`);
       } else {
-        toast('Style saved - but the in-game fix is OFF. Tick "Apply in game" to fix the maps.', true);
+        toast('Style saved - fix is OFF, so maps keep the classic red missing texture. Tick "Apply in game" to fix them.', true);
       }
     } catch (e) {
       toast('Could not save: ' + e.message, true);
@@ -1920,6 +2145,7 @@ $('lowRes').addEventListener('change', () => {
 });
 $('skyCard').addEventListener('click', openSkyPicker);
 $('resetMapBtn').addEventListener('click', resetMap);
+$('upscaleMapBtn').addEventListener('click', openUpscaleMap);
 $('mapLightBtn').addEventListener('click', () => openLighting('map'));
 $('importFile').addEventListener('change', e => {
   if (e.target.files.length) importPresetFile(e.target.files[0]);
@@ -1940,16 +2166,210 @@ $('gameBtn').addEventListener('click', async () => {
   }
 });
 
+// ---------- AI upscale of a map's textures ----------
+let upscalePoll = 0;
+
+// One texture, straight from its card: same job machinery, one name.
+async function upscaleOne(t) {
+  if (!state.detail) return;
+  const map = state.detail.name;
+  const factor = Number(localStorage.getItem('aq2ts.upFactor')) || 4;
+  const src = localStorage.getItem('aq2ts.upSrc') === 'low' ? 'low' : 'auto';
+  const model = localStorage.getItem('aq2ts.upModel') === 'smooth' ? 'smooth' : 'detail';
+  try {
+    const st = await apiGet('/api/upscale/status');
+    if (!st.tool.installed) { toast('The AI upscaler is not installed yet - open ✨ AI upscale… on the map (or the Skin studio) to download it', true); return; }
+    if (st.running) { toast(`Busy upscaling ${st.map} - try again when it finishes`, true); return; }
+    if (t.swap && t.swap.type === 'upscale') await apiPost('/api/swap', { map, from: t.name, spec: null });
+    const r = await apiPost('/api/upscale/map', { map, factor, minSkip: 100000, src, model, names: [t.name] });
+    if (!r.total) {
+      toast(t.ext === '.wal' || t.missing
+        ? `${t.name}: nothing to upscale (missing file, or already over the 4096 px limit)`
+        : `${t.name}: no .wal original - the engine would tile an upscale ${factor}x denser, so it is left alone`, true);
+      return;
+    }
+    toast(`Upscaling ${t.name} ${factor}x ${model}${src === 'low' ? ', from the original .wal' : ''}…`);
+    const wait = async () => {
+      const s2 = await apiGet('/api/upscale/status');
+      if (s2.running) { setTimeout(wait, 700); return; }
+      for (const f of (s2.failed || []).slice(0, 2)) toast(f, true);
+      if (s2.applied) toast(`${t.name} upscaled - F9 in game (hi-res mode)`);
+      if (state.activeMap === map) await selectMap(map);
+    };
+    setTimeout(wait, 700);
+  } catch (e) {
+    toast('Upscale: ' + e.message, true);
+  }
+}
+async function openUpscaleMap() {
+  if (!state.detail) return;
+  const map = state.detail.name;
+  clearTimeout(upscalePoll);
+  let factor = Number(localStorage.getItem('aq2ts.upFactor')) || 4;
+  let minSkip = Number(localStorage.getItem('aq2ts.upSkip')) || 1024;
+  let src = localStorage.getItem('aq2ts.upSrc') === 'low' ? 'low' : 'auto';
+  let model = localStorage.getItem('aq2ts.upModel') === 'smooth' ? 'smooth' : 'detail';
+  // which eligible textures to do: everything by default, user unticks the
+  // ones that will not take an upscale well (signs, decals, tiny trims...)
+  let selected = null; // Set of names, null = "all eligible"
+  let lastEligible = [];
+
+  const render = async () => {
+    let plan, status;
+    try {
+      [plan, status] = await Promise.all([
+        apiGet('/api/upscale/plan', { name: map, factor, minSkip, src, model }),
+        apiGet('/api/upscale/status'),
+      ]);
+    } catch (e) { toast('Upscale: ' + e.message, true); return; }
+    const tool = plan.tool;
+    const running = status.running && status.map === map;
+    const busyElsewhere = status.running && status.map !== map;
+    const pct = status.total ? Math.round(status.done / status.total * 100) : 0;
+    // done textures are listed too (unticked): ticking one redoes it with the
+    // settings above. "all" means all not-yet-done; done ones are opt-in.
+    const doneNames = plan.already.map(a => a.name);
+    lastEligible = plan.eligible.map(e => e.name).concat(doneNames);
+    if (selected) for (const n of [...selected]) if (!lastEligible.includes(n)) selected.delete(n);
+    const isSel = n => selected ? selected.has(n) : !doneNames.includes(n);
+    const nSel = lastEligible.filter(isSel).length;
+    const secs = Math.max(0, nSel - plan.cached) * 3;
+    const est = secs < 90 ? `about ${Math.max(10, Math.round(secs / 10) * 10)} seconds` : `about ${Math.round(secs / 60)} minutes`;
+    const body = running ? `
+      <p class="mnote">Upscaling <b>${status.done} / ${status.total}</b>${status.current ? ` · <span class="mono">${status.current}</span>` : ''}</p>
+      <div class="sk-bar"><div style="width:${pct}%"></div></div>
+      <p class="mnote">Each texture is cached, so the next map that uses it is instant. You can close this window - it keeps running.</p>`
+      : `
+      <p class="mnote">Real-ESRGAN redraws each texture at a higher resolution with real detail. The result replaces only the
+        <b>hi-res override</b> (what <span class="mono">r_texture_overrides 31</span> samples); the .wal keeps its grid, so tiling is
+        unchanged and low-res mode stays stock. Sharper walls in screenshots and mapping, no effect in wal mode.</p>
+      ${!tool.installed ? `<p class="sk-err">The AI upscaler is not installed yet - open the Skin studio's AI upscale once to download it (${tool.downloadMB} MB).</p>` : ''}
+      <div class="flatrow"><span class="count">Source:</span>
+        <button class="scbtn${src === 'auto' ? ' sel' : ''}" data-src="auto" title="Whatever the engine would sample in hi-res mode - community hi-res packs first">best available</button>
+        <button class="scbtn${src === 'low' ? ' sel' : ''}" data-src="low" title="The original paletted .wal art, redrawn sharper - the classic look, just crisp">original low-res (.wal)</button></div>
+      <div class="flatrow"><span class="count">Look:</span>
+        <button class="scbtn${model === 'detail' ? ' sel' : ''}" data-model="detail" title="realesrgan-x4plus: keeps grime, stone edges, wood grain - best for walls, floors, rock, metal">detailed</button>
+        <button class="scbtn${model === 'smooth' ? ' sel' : ''}" data-model="smooth" title="realesr-animevideov3: flatter and cleaner - keeps fine geometric patterns (grates, checker lamps, signs) that the detailed model smooths away">smooth</button></div>
+      <div class="flatrow"><span class="count">Scale:</span>
+        ${[2, 3, 4].map(f => `<button class="scbtn${f === factor ? ' sel' : ''}" data-f="${f}">${f}x</button>`).join('')}
+        <span class="count">textures too big for ${factor}x drop to the largest that fits 4096 px</span></div>
+      <div class="flatrow"><span class="count">Skip textures already at least:</span>
+        ${[512, 1024, 2048].map(v => `<button class="scbtn${v === minSkip ? ' sel' : ''}" data-s="${v}">${v} px</button>`).join('')}</div>
+      <div class="upplan">
+        <div class="flatrow" style="margin:0">
+          <span><b id="upSelCount">${nSel}</b> of ${lastEligible.length} textures selected${plan.cached ? ` (<b>${plan.cached}</b> already cached, instant)` : ''}${doneNames.length ? ` · ${doneNames.length} done (tick to redo with the settings above)` : ''}</span>
+          <span style="flex:1"></span>
+          <button class="small" id="upAll">All</button>
+          <button class="small" id="upNone">None</button>
+        </div>
+        <div class="upgrid" id="upGrid">${plan.eligible.map(e => `
+          <label class="upitem${isSel(e.name) ? ' sel' : ''}" data-name="${e.name}" title="${e.name} · ${e.w}×${e.h} ${e.ext ? e.ext.slice(1) : ''} → ${e.w * e.factor}×${e.h * e.factor}${e.regen ? ' · regenerates a missing file' : ''}">
+            <input type="checkbox" ${isSel(e.name) ? 'checked' : ''}>
+            <img loading="lazy" src="${thumbUrl({ tex: e.name, size: 64, res: src === 'low' ? 'low' : 'hi' })}" alt="">
+            <span class="upname">${e.name.split('/').pop()}<small>${e.w}×${e.h} → ${e.factor}x</small></span>
+          </label>`).join('')}${plan.already.map(a => `
+          <label class="upitem done${isSel(a.name) ? ' sel' : ''}" data-name="${a.name}" title="${a.name} · already upscaled ${a.factor}x ${a.model}${a.src === 'low' ? ' from the .wal' : ''} - tick to redo it with the settings above">
+            <input type="checkbox" ${isSel(a.name) ? 'checked' : ''}>
+            <img loading="lazy" src="${thumbUrl({ upscale: a.name, factor: a.factor, src: a.src, model: a.model, size: 64 })}" alt="">
+            <span class="upname">${a.name.split('/').pop()}<small>done · ${a.factor}x ${a.model}${a.src === 'low' ? ' · wal' : ''}</small></span>
+          </label>`).join('')}</div>
+        <div class="count">${plan.skipHiRes.length} already hi-res · ${plan.skipSwapped.length} have other swaps · ${plan.already.length} upscaled · ${plan.skipMissing.length} missing · ${plan.tooBig.length} over the size limit${plan.noGrid.length ? ` · <span title="${plan.noGrid.join(', ')}">${plan.noGrid.length} without a .wal (the engine would tile them ${factor}x denser - left alone)</span>` : ''}</div>
+        ${nSel ? `<div class="count">estimated ${est} on your GPU</div>` : ''}
+      </div>
+      ${status.finished && status.map === map ? `<p class="mnote">Last run: ${status.applied} textures applied${status.failed.length ? `, ${status.failed.length} failed` : ''}${status.cancelled ? ' (cancelled)' : ''}.</p>` : ''}
+      ${busyElsewhere ? `<p class="sk-err">Busy upscaling ${status.map} right now - wait for it to finish.</p>` : ''}`;
+    openModal(`
+      <div class="mhead"><h3>✨ AI upscale textures <span class="mono">${map}</span></h3><button class="mclose">✕</button></div>
+      <div class="mbody">${body}</div>
+      <div class="mfoot">
+        ${running ? '<button class="danger" id="upCancel">Cancel</button>'
+          : `${plan.already.length ? '<button class="danger" id="upRemove">Remove upscales</button>' : ''}
+             <button class="primary" id="upStart" ${!tool.installed || !nSel || busyElsewhere ? 'disabled' : ''}>Upscale ${nSel} texture${nSel === 1 ? '' : 's'}</button>`}
+      </div>`);
+    if (running) {
+      $('upCancel').addEventListener('click', () => apiPost('/api/upscale/cancel', {}).catch(() => {}));
+      upscalePoll = setTimeout(async () => {
+        if ($('modalOverlay').classList.contains('hidden')) return;
+        const st = await apiGet('/api/upscale/status').catch(() => null);
+        if (st && !st.running) {
+          closeModal();
+          for (const f of (st.failed || []).slice(0, 4)) toast(f, true);
+          toast(st.applied ? `AI upscale done: ${st.applied} textures on ${map} - F9 in game (hi-res mode)` : 'AI upscale finished with nothing to apply', !st.applied);
+          if (state.activeMap === map) await selectMap(map);
+        } else render();
+      }, 800);
+      return;
+    }
+    $('modal').querySelectorAll('.scbtn[data-f]').forEach(b => b.addEventListener('click', () => {
+      factor = Number(b.dataset.f); localStorage.setItem('aq2ts.upFactor', factor); render();
+    }));
+    $('modal').querySelectorAll('.scbtn[data-s]').forEach(b => b.addEventListener('click', () => {
+      minSkip = Number(b.dataset.s); localStorage.setItem('aq2ts.upSkip', minSkip); render();
+    }));
+    $('modal').querySelectorAll('.scbtn[data-src]').forEach(b => b.addEventListener('click', () => {
+      src = b.dataset.src; localStorage.setItem('aq2ts.upSrc', src); render();
+    }));
+    $('modal').querySelectorAll('.scbtn[data-model]').forEach(b => b.addEventListener('click', () => {
+      model = b.dataset.model; localStorage.setItem('aq2ts.upModel', model); render();
+    }));
+    const syncSel = () => {
+      const n = lastEligible.filter(isSel).length;
+      $('upSelCount').textContent = n;
+      const go = $('upStart');
+      if (go) { go.disabled = !tool.installed || !n || busyElsewhere; go.textContent = `Upscale ${n} texture${n === 1 ? '' : 's'}`; }
+      $('modal').querySelectorAll('.upitem').forEach(el => el.classList.toggle('sel', isSel(el.dataset.name)));
+    };
+    $('modal').querySelectorAll('.upitem input').forEach(cb => cb.addEventListener('change', () => {
+      if (!selected) selected = new Set(lastEligible.filter(n => !doneNames.includes(n)));
+      const name = cb.closest('.upitem').dataset.name;
+      if (cb.checked) selected.add(name); else selected.delete(name);
+      syncSel();
+    }));
+    $('upAll').addEventListener('click', () => { selected = new Set(lastEligible); $('modal').querySelectorAll('.upitem input').forEach(cb => { cb.checked = true; }); syncSel(); });
+    $('upNone').addEventListener('click', () => { selected = new Set(); $('modal').querySelectorAll('.upitem input').forEach(cb => { cb.checked = false; }); syncSel(); });
+    const rm = $('upRemove');
+    if (rm) rm.addEventListener('click', async () => {
+      try {
+        const r = await apiPost('/api/upscale/remove', { map });
+        closeModal();
+        applyMutation(r);
+        toast(`Removed ${r.removed} upscale${r.removed === 1 ? '' : 's'} on ${map}`);
+      } catch (e) { toast(e.message, true); }
+    });
+    const go = $('upStart');
+    if (go) go.addEventListener('click', async () => {
+      go.disabled = true;
+      try {
+        await apiPost('/api/upscale/map', { map, factor, minSkip, src, model, names: lastEligible.filter(isSel) });
+        render();
+      } catch (e) { toast('Upscale: ' + e.message, true); go.disabled = false; }
+    });
+  };
+  render();
+}
+
 // bridge for the viewer module
 window.AQTS = {
   state,
   thumbUrl,
   swapThumbUrl,
   toast,
+  texDims: async names => (await apiPost('/api/texdims', { names })).dims,
   openPickerByName: name => {
     const t = state.detail && state.detail.textures.find(x => x.name === name);
     if (t) openPicker(t);
     else toast('Texture not found on this map: ' + name, true);
+  },
+  // for the skin studio module
+  apiGet,
+  apiPost,
+  openModal,
+  closeModal,
+  exportDone: exportDoneModal,
+  skinsChanged: summary => {
+    if (!state.scan) return;
+    state.scan.skins = summary;
+    renderHook();
   },
 };
 

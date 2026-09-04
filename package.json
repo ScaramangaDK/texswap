@@ -1,7 +1,7 @@
 {
   "name": "aq2textureswapper",
   "productName": "TexSwap",
-  "version": "1.3.0",
+  "version": "1.5.0",
   "description": "Restyle AQ2/AQtion maps: swap textures & skyboxes, tune lighting, share presets",
   "author": "Ralle",
   "type": "module",
@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "node devserver.js",
     "app": "electron .",
-    "dist": "electron-builder --win portable"
+    "dist": "electron-builder --win dir && node tools/makezip.mjs"
   },
   "build": {
     "appId": "dk.ralle.aq2textureswapper",
@@ -21,6 +21,7 @@
       "devserver.js",
       "core/**",
       "ui/**",
+      "library/**",
       "!ui/logo.png",
       "!ui/logo2.png",
       "!ui/logo2-ui.png",
@@ -35,11 +36,8 @@
       "!ui/frame5to1.png"
     ],
     "win": {
-      "target": "portable",
+      "target": "dir",
       "icon": "build/icon.ico"
-    },
-    "portable": {
-      "artifactName": "TexSwap.exe"
     }
   },
   "dependencies": {

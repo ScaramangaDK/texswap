@@ -10,41 +10,35 @@
     background: #0e1116;
     color: #94a0b8;
     font-family: "Segoe UI", system-ui, sans-serif;
+    overflow: hidden;
+    user-select: none;
+    -webkit-app-region: drag;
+  }
+  body {
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    overflow: hidden;
+    padding: 18px 22px 12px;
+    box-sizing: border-box;
   }
-  /* full-bleed loading artwork (ui/loading.png) - removes itself if absent */
-  #bg {
-    position: fixed;
-    inset: 0;
+  .logo {
     width: 100%;
-    height: 100%;
-    object-fit: cover;
+    filter: drop-shadow(0 0 22px rgba(255, 140, 26, 0.22));
   }
-  .wrap {
-    position: relative;
-    text-align: center;
-    padding: 26px 44px;
-    border-radius: 16px;
-    background: rgba(14, 17, 22, 0.62);
-    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+  .status {
+    margin-top: 10px;
+    font-size: 12.5px;
+    letter-spacing: 0.05em;
+    min-height: 16px;
   }
-  body.nobg .wrap { background: none; box-shadow: none; }
-  .wrap img {
-    width: 360px;
-    max-width: 76vw;
-    filter: drop-shadow(0 0 24px rgba(255, 140, 26, 0.25));
-  }
-  .msg {
-    margin-top: 22px;
-    font-size: 14px;
-    letter-spacing: 0.04em;
-  }
-  .dots::after {
+  .status .dots::after {
     content: '';
     animation: dots 1.4s steps(4, end) infinite;
+    /* fixed-width slot so the centered text never shifts as dots count up */
+    display: inline-block;
+    width: 1.3em;
+    text-align: left;
   }
   @keyframes dots {
     0% { content: ''; }
@@ -53,41 +47,89 @@
     75% { content: '...'; }
   }
   .bar {
-    margin: 16px auto 0;
-    width: 220px;
-    height: 3px;
+    margin-top: 7px;
+    width: 100%;
+    height: 5px;
     background: #232c3e;
-    border-radius: 2px;
+    border-radius: 3px;
     overflow: hidden;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
   }
   .bar span {
     display: block;
     height: 100%;
-    width: 40%;
-    background: #ff8c1a;
-    border-radius: 2px;
-    animation: slide 1.2s ease-in-out infinite alternate;
+    width: 0%;
+    background: linear-gradient(90deg, #ff8c1a, #ffa94d);
+    border-radius: 3px;
   }
   .credit {
-    margin-top: 18px;
-    font-size: 12px;
+    margin-top: 9px;
+    font-size: 11px;
     letter-spacing: 0.08em;
     color: #5f6b82;
   }
   .credit b { color: #ffa94d; font-weight: 600; }
-  @keyframes slide {
-    from { transform: translateX(-60%); }
-    to { transform: translateX(340%); }
-  }
 </style>
 </head>
 <body>
-  <img id="bg" src="loading.png" alt="" onerror="this.remove(); document.body.classList.add('nobg')">
-  <div class="wrap">
-    <img src="texswaplogo-ui.png" alt="TexSwap">
-    <div class="msg dots">Starting up</div>
-    <div class="bar"><span></span></div>
-    <div class="credit">by <b>Ralle</b></div>
-  </div>
+  <img class="logo" src="texswaplogo-splash.png" alt="TexSwap">
+  <div class="status"><span id="stext" class="dots">Starting engine</span></div>
+  <div class="bar" id="bar"><span id="fill"></span></div>
+  <div class="credit">by <b>Ralle</b></div>
+  <script>
+    // The bar always FILLS left-to-right, driven by rAF with one numeric
+    // source of truth - no computed-style reads, so it can never jump back.
+    // Self-fills with nothing to load; real scan progress takes over when it
+    // arrives, and finishTo() completes it to 100%.
+    const fill = document.getElementById('fill');
+    const stext = document.getElementById('stext');
+    let cur = 0;
+    let from = 0;
+    let target = 0;
+    let dur = 1;
+    let t0 = 0;
+    let raf = 0;
+    let iv = 0;
+    const step = () => {
+      const k = Math.min(1, (performance.now() - t0) / dur);
+      cur = from + (target - from) * k;
+      fill.style.width = cur + '%';
+      if (k >= 1) {
+        cancelAnimationFrame(raf);
+        clearInterval(iv);
+        iv = 0;
+      }
+      return k;
+    };
+    const loop = () => {
+      if (step() < 1) raf = requestAnimationFrame(loop);
+    };
+    const goTo = (pct, ms) => {
+      cancelAnimationFrame(raf);
+      clearInterval(iv);
+      from = cur;
+      target = Math.max(cur, Math.min(100, pct)); // never backwards
+      dur = Math.max(50, ms);
+      t0 = performance.now();
+      raf = requestAnimationFrame(loop);
+      // safety net: keep advancing even if rAF is throttled (occluded window)
+      iv = setInterval(step, 250);
+    };
+    // gentle self-fill from the start, capped so it never looks done early
+    goTo(88, 4200);
+
+    // electron-main pushes progress here while it warms the install
+    window.setProgress = (phase, done, total) => {
+      if (total > 0) {
+        stext.className = '';
+        stext.textContent = `${phase}…  ${done} / ${total}`;
+        goTo(done / total * 100, 300);
+      } else {
+        stext.className = 'dots';
+        stext.textContent = phase;
+      }
+    };
+    window.finishTo = ms => goTo(100, ms);
+  </script>
 </body>
 </html>

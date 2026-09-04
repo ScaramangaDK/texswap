@@ -3,7 +3,7 @@
 // requested extension, so link targets must match the source extension).
 import { PNG } from 'pngjs';
 import jpeg from 'jpeg-js';
-import { loadRgba, resizeRgba } from './thumbs.js';
+import { loadRgba, resizeRgba, TEXTURE_EXTS, TEXTURE_EXTS_LOW } from './thumbs.js';
 
 // --- encoders (all take {width, height, data: RGBA Buffer}) ---
 
@@ -45,8 +45,10 @@ function nearestPaletteIndex(palette, r, g, b) {
 
 export function encodeWalFile(img, palette, name = 'texswap') {
   if (!palette) throw new Error('wal encoding needs the Q2 palette');
-  // wal wants mippable dims; clamp to <=256 and round down to multiple of 16
-  let scaled = resizeRgba(img, 256);
+  // wal wants mippable dims: round down to multiple of 16 (4 mip levels).
+  // Modern engines take large wals (AQtion ships 512s), so preserve the
+  // source resolution - capping would change in-game tiling density.
+  let scaled = resizeRgba(img, 1024);
   const w = Math.max(16, scaled.width & ~15);
   const h = Math.max(16, scaled.height & ~15);
   if (w !== scaled.width || h !== scaled.height) {
@@ -59,6 +61,10 @@ export function encodeWalFile(img, palette, name = 'texswap') {
   for (let level = 0; level < 4; level++) {
     const idx = Buffer.alloc(mip.width * mip.height);
     for (let i = 0; i < idx.length; i++) {
+      // transparent texels become palette index 255 - the engine's hole
+      // marker on trans/alphatest surfaces. Without this, swapped fences
+      // and grates render as solid slabs in wal mode.
+      if (mip.data[i * 4 + 3] < 128) { idx[i] = 255; continue; }
       const r = mip.data[i * 4], g = mip.data[i * 4 + 1], b = mip.data[i * 4 + 2];
       const key = (r << 16) | (g << 8) | b;
       let pi = cache.get(key);
@@ -112,7 +118,32 @@ export function parseColor(hex) {
   return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
 }
 
-export const FLAT_STYLES = ['solid', 'grid', 'checker', 'stripes', 'diag'];
+export const FLAT_STYLES = ['solid', 'grid', 'checker', 'stripes', 'diag', 'diamond'];
+
+// q2pro's generated "notexture" shown on missing textures in-game: an 8x8
+// red-on-black dot pattern built from dottexture[i & 3][j & 3] (see q2pro
+// src/refresh/texture.c GL_InitDefaultTexture). Reproduced texel-exact.
+const NOTEX_DOT4 = [
+  [0, 0, 0, 0],
+  [0, 0, 1, 1],
+  [0, 1, 1, 1],
+  [0, 1, 1, 1],
+];
+export function notextureImage(size = 128) {
+  // in-game the tiny 8x8 texture repeats across the whole surface, so the
+  // preview tiles it too (2px texels at 128) - a dense field of red dots
+  const texel = Math.max(1, Math.round(size / 64));
+  const data = Buffer.alloc(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const on = NOTEX_DOT4[Math.floor(y / texel) & 3][Math.floor(x / texel) & 3];
+      const i = (y * size + x) * 4;
+      data[i] = on ? 255 : 0;
+      data[i + 3] = 255;
+    }
+  }
+  return { width: size, height: size, data };
+}
 
 export function flatImage(colorHex, style = 'solid', size = 128, patternHex = null, scale = 1) {
   const [r, g, b] = parseColor(colorHex);
@@ -142,6 +173,10 @@ export function flatImage(colorHex, style = 'solid', size = 128, patternHex = nu
         case 'diag':
           isDark = (((x - y) % cell) + cell) % cell < lw;
           break;
+        case 'diamond':
+          // both 45-degree directions crossing - a diagonal lattice
+          isDark = (((x - y) % cell) + cell) % cell < lw || (x + y) % cell < lw;
+          break;
       }
       const px = isDark ? dark : [r, g, b];
       const o = (y * size + x) * 4;
@@ -156,9 +191,35 @@ export function transparentImage(size = 64) {
   return { width: size, height: size, data: Buffer.alloc(size * size * 4) };
 }
 
-// Decode the best existing variant of a texture and re-encode it as `ext`.
-export function transcode(gameFs, palette, targetBasePath, ext, name) {
-  const img = loadRgba(gameFs, targetBasePath, palette);
+// Resample by a scale factor: box-filter down, crisp nearest up.
+export function scaleRgba(img, scale) {
+  if (!scale || scale === 1) return img;
+  if (scale < 1) {
+    return resizeRgba(img, Math.max(16, Math.round(Math.max(img.width, img.height) * scale)));
+  }
+  return exactResize(img,
+    Math.min(2048, Math.round(img.width * scale)),
+    Math.min(2048, Math.round(img.height * scale)));
+}
+
+// Resample to an exact grid. The engine tiles by the served file's dims, so
+// gen files are built in the ORIGINAL surface's mapping grid (times the swap
+// scale) - that keeps the game and the 3D viewer in lockstep.
+export function resizeToGrid(img, gridW, gridH) {
+  const w = Math.max(16, Math.min(2048, Math.round(gridW)));
+  const h = Math.max(16, Math.min(2048, Math.round(gridH)));
+  if (img.width === w && img.height === h) return img;
+  return exactResize(img, w, h);
+}
+
+// Decode the best existing variant of a texture and re-encode it as `ext`,
+// optionally rescaled (the served size is what the engine tiles by).
+// Holes decode to alpha 0 (wal/pcx index 255, or real image alpha) so every
+// encoder can carry them through; wal output prefers the wal/pcx source,
+// where index-255 hole placement is the engine truth.
+export function transcode(gameFs, palette, targetBasePath, ext, name, scale = 1) {
+  const order = ext === '.wal' ? TEXTURE_EXTS_LOW : TEXTURE_EXTS;
+  const img = loadRgba(gameFs, targetBasePath, palette, order, { transparent255: true });
   if (!img) throw new Error('target has no image file: ' + targetBasePath);
-  return encodeAs(ext, img, palette, name);
+  return encodeAs(ext, scaleRgba(img, scale), palette, name);
 }

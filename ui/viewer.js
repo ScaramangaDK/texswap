@@ -7,35 +7,147 @@ let ctx = null;
 function urlForGroup(name, detail, isTrans) {
   const t = detail && detail.textures.find(x => x.name === name);
   const AQTS = window.AQTS;
-  // trans surfaces: always load the .wal with palette-255 masking — hi-res
-  // conversions often have the salmon "transparent color" baked in opaquely
-  if (t && t.swap) {
+  // alphatest (fences, grates): force the .wal with palette-255 masking -
+  // hi-res conversions often bake the salmon "transparent" color opaquely.
+  // pure trans (water, glass): follow the user's res choice; alpha=1 still
+  // cuts 255-holes when the source is paletted, and hi-res files pass as-is.
+  // low-res preview: the game reads the .wal there, so an AI upscale is
+  // not in effect and the original is shown
+  const upscaleHidden = t && t.swap && t.swap.type === 'upscale' && AQTS.state.res === 'low';
+  if (t && t.swap && !upscaleHidden) {
     if (t.swap.type === 'invisible') {
       return { invisible: true, trans: t.flags.some(f => f.startsWith('trans') || f === 'alphatest') };
     }
     if (t.swap.type === 'stock' && isTrans) {
-      return { url: AQTS.thumbUrl({ tex: t.swap.to, size: 256, alpha: 1, res: 'low' }) };
+      const p = { tex: t.swap.to, size: 1024, alpha: 1 };
+      if (isTrans.alphatest) p.res = 'low';
+      return { url: AQTS.thumbUrl(p), scale: t.swap.scale || 1 };
     }
-    return { url: AQTS.swapThumbUrl(t.swap, 256) };
+    return { url: AQTS.swapThumbUrl(t.swap, 1024, name), scale: t.swap.scale || 1 };
   }
-  const params = { tex: name, size: 256 };
-  if (isTrans) { params.alpha = 1; params.res = 'low'; }
+  const params = { tex: name, size: 1024 };
+  if (isTrans) {
+    params.alpha = 1;
+    if (isTrans.alphatest) params.res = 'low';
+  }
   return { url: AQTS.thumbUrl(params) };
 }
 
-function loadMapTexture(url) {
-  if (ctx.texCache.has(url)) return ctx.texCache.get(url);
-  const tex = ctx.loader.load(url);
+// "game look": the whole engine light chain applied in one click. Slider
+// cvars stay on the sliders; intensity + gl_saturation are baked into the
+// textures at load (that is where the engine applies them too), colored-
+// lightmaps into the lightmap atlas, and vid_gamma becomes an SVG gamma
+// ramp over the canvas - the same curve as the engine's hardware ramp.
+let gameLook = null;
+let gameLookOn = false;
+
+function bakeFilter() {
+  if (!gameLookOn || !gameLook) return '';
+  const p = [];
+  if (Number.isFinite(gameLook.intensity) && gameLook.intensity !== 1) p.push(`brightness(${gameLook.intensity})`);
+  if (Number.isFinite(gameLook.saturation) && gameLook.saturation !== 1) p.push(`saturate(${gameLook.saturation})`);
+  return p.join(' ');
+}
+
+function bakeImage(tex, filter) {
+  const img = tex.userData.origImage || tex.image;
+  if (!img || !img.width || !filter) return;
+  const c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const g = c.getContext('2d');
+  g.filter = filter;
+  g.drawImage(img, 0, 0);
+  if (!tex.userData.origImage) tex.userData.origImage = img;
+  tex.image = c;
+  tex.needsUpdate = true;
+}
+
+function bakeLightmap() {
+  const lm = ctx && ctx.lightMap;
+  if (!lm) return;
+  const clm = gameLookOn && gameLook && Number.isFinite(gameLook.coloredLightmaps)
+    ? gameLook.coloredLightmaps : 1;
+  if (clm >= 1) {
+    if (lm.userData.origImage) { lm.image = lm.userData.origImage; lm.needsUpdate = true; }
+    return;
+  }
+  bakeImage(lm, `saturate(${clm})`);
+}
+
+function applyGamma(canvas) {
+  const g = gameLookOn && gameLook && Number.isFinite(gameLook.gamma) && gameLook.gamma !== 1
+    ? gameLook.gamma : null;
+  if (g === null) { canvas.style.filter = ''; return; }
+  let svg = document.getElementById('vGammaSvg');
+  if (!svg) {
+    svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.id = 'vGammaSvg';
+    svg.setAttribute('width', '0');
+    svg.setAttribute('height', '0');
+    svg.style.position = 'absolute';
+    svg.innerHTML = '<filter id="vGammaF"><feComponentTransfer>'
+      + ['R', 'G', 'B'].map(ch => `<feFunc${ch} type="gamma" amplitude="1" exponent="1" offset="0"/>`).join('')
+      + '</feComponentTransfer></filter>';
+    document.body.appendChild(svg);
+  }
+  for (const fn of svg.querySelectorAll('feFuncR,feFuncG,feFuncB')) fn.setAttribute('exponent', String(g));
+  canvas.style.filter = 'url(#vGammaF)';
+}
+
+function loadMapTexture(url, rep = null) {
+  const bake = bakeFilter();
+  const key = url + (rep ? `|r${rep.x.toFixed(4)},${rep.y.toFixed(4)}` : '') + (bake ? '|g' : '');
+  if (ctx.texCache.has(key)) return ctx.texCache.get(key);
+  const tex = ctx.loader.load(url, bake ? t => bakeImage(t, bake) : undefined);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.flipY = false;
   tex.colorSpace = THREE.SRGBColorSpace;
-  ctx.texCache.set(url, tex);
+  // match the game's gl_anisotropy: crisp floors/walls at grazing angles
+  tex.anisotropy = ctx.maxAniso || 1;
+  // the engine tiles by the SERVED file's dims; UVs are normalized against
+  // the original's grid, so scale them to the replacement's grid here
+  if (rep) tex.repeat.set(rep.x, rep.y);
+  ctx.texCache.set(key, tex);
   return tex;
+}
+
+// dims of every swap target, so repeats can mirror the engine exactly
+async function ensureSwapDims(detail) {
+  if (!ctx) return;
+  const need = [];
+  for (const t of detail.textures) {
+    if (t.swap && t.swap.type === 'stock' && !(t.swap.to in ctx.swapDims)) need.push(t.swap.to);
+  }
+  if (!need.length) return;
+  try {
+    const dims = await window.AQTS.texDims([...new Set(need)]);
+    for (const n of new Set(need)) ctx.swapDims[n] = dims[n] || null;
+  } catch { /* repeats fall back to 1:1 */ }
+}
+
+function swapRepeat(mesh, t) {
+  if (!t || !t.swap) return null;
+  let S = t.swap.scale || 1;
+  let td = null;
+  if (t.swap.type === 'custom') td = { w: t.swap.w, h: t.swap.h };
+  else if (t.swap.type === 'flat') {
+    // the flat generator bakes the pattern scale INTO the 128px file (and
+    // the thumb), so the UVs must not scale again on top
+    td = { w: 128, h: 128 };
+    S = 1;
+  }
+  else td = ctx.swapDims[t.swap.to];
+  if (!td || !td.w || !td.h) return S !== 1 ? { x: 1 / S, y: 1 / S } : null;
+  const x = (mesh.userData.texW || 64) / (td.w * S);
+  const y = (mesh.userData.texH || 64) / (td.h * S);
+  return (Math.abs(x - 1) < 0.001 && Math.abs(y - 1) < 0.001) ? null : { x, y };
 }
 
 function applyGroupLook(mesh, detail) {
   const f = mesh.userData.flags || [];
-  const isMasked = f.includes('trans33') || f.includes('trans66') || f.includes('alphatest');
+  const isMasked = f.includes('trans33') || f.includes('trans66') || f.includes('alphatest')
+    ? { alphatest: f.includes('alphatest') }
+    : null;
   const info = urlForGroup(mesh.userData.texName, detail, isMasked);
   const mat = mesh.material;
   if (info.invisible) {
@@ -51,7 +163,8 @@ function applyGroupLook(mesh, detail) {
   }
   mesh.visible = true;
   mat.color.set(0xffffff);
-  mat.map = loadMapTexture(info.url);
+  const t = detail && detail.textures.find(x => x.name === mesh.userData.texName);
+  mat.map = loadMapTexture(info.url, swapRepeat(mesh, t));
   mat.needsUpdate = true;
 }
 
@@ -146,6 +259,7 @@ async function open(detail) {
   const canvas = document.getElementById('viewerCanvas');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  const maxAniso = renderer.capabilities.getMaxAnisotropy();
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x10141a);
 
@@ -156,8 +270,9 @@ async function open(detail) {
     const lmUrl = new URL('/api/maplight', location.origin);
     lmUrl.searchParams.set('dir', AQTS.state.dir);
     lmUrl.searchParams.set('name', detail.name);
-    lightMap = new THREE.TextureLoader().load(lmUrl.toString());
+    lightMap = new THREE.TextureLoader().load(lmUrl.toString(), () => bakeLightmap());
     lightMap.channel = 1; // sample the uv1 attribute, not the diffuse UVs
+    lightMap.anisotropy = maxAniso;
     lightMap.flipY = false;
     // linear sampling: sRGB-decoding crushes dark luxels and everything
     // ends up far darker than the engine's straight byte-multiply
@@ -171,11 +286,41 @@ async function open(detail) {
   // meshbasic computes tex * lm * intensity * RECIPROCAL_PI + tex * uBright,
   // so intensity = modulate * PI and uBright = brightness * modulate.
   const Lg = AQTS.state.scan && AQTS.state.scan.lighting;
+  // engine light: { launch, profiles } - launch is q2config -> autoexec; a
+  // profile is any other loose cfg with light cvars, layered on top of launch
+  const EngAll = (AQTS.state.scan && AQTS.state.scan.engineLighting) || null;
+  const profNames = EngAll ? Object.keys(EngAll.profiles || {}) : [];
+  let profSel = localStorage.getItem('aq2ts.vgamecfg') || '';
+  if (profSel && !profNames.includes(profSel)) profSel = '';
+  const pickEng = () => {
+    if (!EngAll) return {};
+    if (profSel && EngAll.profiles && EngAll.profiles[profSel]) return EngAll.profiles[profSel];
+    return EngAll.launch || {};
+  };
+  const engVals = () => {
+    const E = pickEng();
+    return {
+      E,
+      // gl_modulate_world multiplies on top of gl_modulate for world lightmaps
+      mod: Number.isFinite(E.modulate)
+        ? E.modulate * (Number.isFinite(E.modulateWorld) ? E.modulateWorld : 1)
+        : NaN,
+      add: Number.isFinite(E.brightness) ? E.brightness : NaN,
+    };
+  };
+  const hasVals = E => Object.keys(E).some(k => k !== 'source' && Number.isFinite(E[k]));
+  gameLook = hasVals(pickEng()) ? pickEng() : null;
+  gameLookOn = !!gameLook && localStorage.getItem('aq2ts.vgame') === '1';
   const cvar = n => Lg && Lg.manage && Lg.global ? parseFloat(Lg.global[n]) : NaN;
   const savedMod = parseFloat(localStorage.getItem('aq2ts.vmod'));
   const savedAdd = parseFloat(localStorage.getItem('aq2ts.vadd'));
-  let mod = Number.isFinite(savedMod) ? savedMod : (cvar('gl_modulate') || 1);
-  let add = Number.isFinite(savedAdd) ? savedAdd : (Number.isFinite(cvar('gl_brightness')) ? cvar('gl_brightness') : 0.1);
+  const engMod = engVals().mod;
+  const engAdd = engVals().add;
+  let mod = Number.isFinite(savedMod) ? savedMod
+    : (cvar('gl_modulate') || (Number.isFinite(engMod) ? engMod : 1));
+  let add = Number.isFinite(savedAdd) ? savedAdd
+    : (Number.isFinite(cvar('gl_brightness')) ? cvar('gl_brightness')
+      : (Number.isFinite(engAdd) ? engAdd : 0.1));
   mod = Math.min(4, Math.max(0.25, mod));
   add = Math.min(0.4, Math.max(0, add));
   const lmIntensity = mod * Math.PI;
@@ -198,11 +343,74 @@ async function open(detail) {
   addVal.textContent = add.toFixed(3);
   modInput.oninput = addInput.oninput = applyLight;
 
+  const reapplyLook = () => {
+    if (!ctx) return;
+    ctx.texCache.clear();
+    for (const m of ctx.meshes) applyGroupLook(m, detail);
+    bakeLightmap();
+    applyGamma(canvas);
+  };
+
+  // one toggle for the player's own in-game light settings: sliders take
+  // modulate/brightness, intensity/saturation/coloredlightmaps are baked,
+  // vid_gamma filters the canvas. Extra profile cfgs get a small picker.
+  const gameBtn = document.getElementById('vGame');
+  const cfgSel = document.getElementById('vGameCfg');
+  if (gameLook || profNames.length) {
+    const label = () => (gameLookOn ? '✓ my game light' : 'use my game light');
+    const syncBtn = () => {
+      const { E, mod, add } = engVals();
+      const parts = [];
+      if (Number.isFinite(mod)) parts.push(`gl_modulate ${mod}`);
+      if (Number.isFinite(add)) parts.push(`gl_brightness ${add}`);
+      if (Number.isFinite(E.gamma)) parts.push(`vid_gamma ${E.gamma}`);
+      if (Number.isFinite(E.intensity)) parts.push(`intensity ${E.intensity}`);
+      if (Number.isFinite(E.saturation)) parts.push(`gl_saturation ${E.saturation}`);
+      if (Number.isFinite(E.coloredLightmaps)) parts.push(`gl_coloredlightmaps ${E.coloredLightmaps}`);
+      gameBtn.title = `Replicate your in-game light settings (${E.source || 'q2config.cfg'}): ${parts.join(', ')}`;
+      gameBtn.textContent = label();
+    };
+    const applyEngine = () => {
+      const v = engVals();
+      gameLook = hasVals(v.E) ? v.E : null;
+      if (!gameLook) gameLookOn = false;
+      if (gameLookOn) {
+        if (Number.isFinite(v.mod)) modInput.value = v.mod;
+        if (Number.isFinite(v.add)) addInput.value = v.add;
+        applyLight();
+      }
+      syncBtn();
+      reapplyLook();
+    };
+    gameBtn.classList.remove('hidden');
+    syncBtn();
+    gameBtn.onclick = () => {
+      gameLookOn = !gameLookOn;
+      localStorage.setItem('aq2ts.vgame', gameLookOn ? '1' : '0');
+      applyEngine();
+    };
+    if (profNames.length) {
+      cfgSel.classList.remove('hidden');
+      cfgSel.innerHTML = '<option value="">q2config + autoexec</option>'
+        + profNames.map(n => `<option value="${n.replace(/"/g, '&quot;')}"${n === profSel ? ' selected' : ''}>${n}</option>`).join('');
+      cfgSel.onchange = () => {
+        profSel = cfgSel.value;
+        localStorage.setItem('aq2ts.vgamecfg', profSel);
+        applyEngine();
+      };
+    } else {
+      cfgSel.classList.add('hidden');
+    }
+  } else {
+    gameBtn.classList.add('hidden');
+    cfgSel.classList.add('hidden');
+  }
+
   const camera = new THREE.PerspectiveCamera(80, 1, 1, 30000);
   camera.rotation.order = 'YXZ';
 
   ctx = {
-    renderer, scene, camera, lightMap,
+    renderer, scene, camera, lightMap, maxAniso,
     loader: new THREE.TextureLoader(),
     texCache: new Map(),
     meshes: [],
@@ -213,8 +421,10 @@ async function open(detail) {
     last: performance.now(),
     yaw: 0, pitch: 0,
     timeUniform: { value: 0 },
+    swapDims: {},
   };
   window.AQV = ctx;
+  await ensureSwapDims(detail);
   loadSkyBackground(ctx, scene, detail);
 
   // quake (x, y, z-up) -> three (x, z, -y)
@@ -291,11 +501,18 @@ async function open(detail) {
     }
     const mesh = new THREE.Mesh(bg, mat);
     mesh.userData.texName = g.name;
+    mesh.userData.texW = g.texW || 64;
+    mesh.userData.texH = g.texH || 64;
     mesh.userData.flags = g.flags;
     scene.add(mesh);
     ctx.meshes.push(mesh);
     applyGroupLook(mesh, detail);
   }
+
+  // a persisted "game look" applies from the first frame (textures were
+  // already loaded through the bake-aware cache above)
+  bakeLightmap();
+  applyGamma(canvas);
 
   // camera start: a player spawn, else above bounds center
   if (geo.spawns.length) {
@@ -422,8 +639,10 @@ function close() {
   document.getElementById('viewerOverlay').classList.add('hidden');
 }
 
-function onSwapsChanged(detail) {
+async function onSwapsChanged(detail) {
   if (!ctx || !detail || detail.name !== ctx.detailName) return;
+  await ensureSwapDims(detail);
+  if (!ctx || detail.name !== ctx.detailName) return;
   for (const mesh of ctx.meshes) applyGroupLook(mesh, detail);
 }
 

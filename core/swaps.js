@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { flatImage, parseColor, FLAT_STYLES, transcode, encodeAs, encodePngFile } from './gen.js';
+import { flatImage, parseColor, FLAT_STYLES, transcode, encodeAs, encodePngFile, resizeToGrid } from './gen.js';
 import { decodeImage } from './decoders.js';
 import { resolveImage } from './thumbs.js';
 
@@ -105,9 +105,12 @@ export class SwapStore {
                 .map(([k, v]) => [k, v.filter(x => typeof x === 'string')]))
             : {},
           maps: raw.maps,
+          gridSemantics: raw.gridSemantics || 0,
         };
         // the invisible swap type was removed before release (see-through
-        // surfaces are a cheat risk): drop any stored ones, presets included
+        // surfaces are a cheat risk): drop any stored ones, presets included.
+        // AI upscales on textures WITHOUT a .wal are dropped too: the engine
+        // tiles those by the served image, so they shrank on every brush.
         for (const e of Object.values(this.data.maps)) {
           if (!e) continue;
           const sets = [e.swaps, ...Object.values(e.saved || {}).map(p => p && p.swaps)];
@@ -115,11 +118,35 @@ export class SwapStore {
             if (!swaps) continue;
             for (const [k, v] of Object.entries(swaps)) {
               if (v && v.type === 'invisible') delete swaps[k];
+              else if (v && v.type === 'upscale' && !install.fs.has('textures/' + k + '.wal')) delete swaps[k];
             }
           }
         }
       }
     } catch { /* no presets yet */ }
+    this.#migrateGridSemantics();
+  }
+
+  // One-time cfg rebuild markers. v2: swaps keep the replacement's own size
+  // like the engine always rendered links - the 3D viewer mirrors it via UV
+  // repeats. v3: downscaled swaps keep full resolution in their image-ext gen
+  // files (only the wal shrinks, carrying the tiling grid), so hi-res mode
+  // (r_texture_overrides 31) stays sharp at dense tiling. v4: gen wals carry
+  // transparency as palette index 255, so alphatest swaps work in wal mode.
+  #migrateGridSemantics() {
+    if (this.data.gridSemantics === 4) return;
+    this.data.gridSemantics = 4;
+    try { this.#saveJson(); } catch { /* saved on next action */ }
+    // gen/ is purely derived data; wipe it so every file regenerates under
+    // the new rules (also clears stale experiment-era -g<w>x<h> files)
+    try {
+      const genDir = path.join(this.install.writeDir, 'texswap', 'gen');
+      for (const f of fs.readdirSync(genDir)) {
+        try { fs.unlinkSync(path.join(genDir, f)); } catch { /* in use */ }
+      }
+    } catch { /* no gen dir yet */ }
+    // the Install ctor runs the rebuild once we are fully wired up
+    this.pendingHeal = Object.keys(this.data.maps || {}).length > 0;
   }
 
   recentFlats() {
@@ -131,7 +158,7 @@ export class SwapStore {
   }
 
   // Store an uploaded replacement image (png/jpg/tga) and swap to it.
-  setCustomSwap(mapName, from, filename, buf) {
+  setCustomSwap(mapName, from, filename, buf, scale = 1) {
     let ext = path.extname(filename).toLowerCase();
     if (ext === '.jpeg') ext = '.jpg';
     if (!['.png', '.jpg', '.tga'].includes(ext)) {
@@ -144,7 +171,9 @@ export class SwapStore {
     const abs = path.join(this.dataDir, rel);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     fs.writeFileSync(abs, master);
-    return this.setSwap(mapName, from, { type: 'custom', file: rel, w: img.width, h: img.height });
+    const spec = { type: 'custom', file: rel, w: img.width, h: img.height };
+    if (scale && scale !== 1) spec.scale = scale;
+    return this.setSwap(mapName, from, spec);
   }
 
   missingFixConfig() {
@@ -258,6 +287,29 @@ export class SwapStore {
     return this.#saveAndMaterialize();
   }
 
+  // Many swaps on one map in a single save/materialize (the upscale job).
+  setSwapsBulk(mapName, specs) {
+    const e = this.mapEntry(mapName, true);
+    for (const [from, spec] of Object.entries(specs)) {
+      if (spec === null) delete e.swaps[from];
+      else e.swaps[from] = spec;
+    }
+    e.active = null;
+    return this.#saveAndMaterialize();
+  }
+
+  removeUpscales(mapName) {
+    const e = this.data.maps[mapName];
+    if (!e) return { written: [], warnings: [], removed: 0 };
+    let removed = 0;
+    for (const [from, spec] of Object.entries(e.swaps)) {
+      if (spec && spec.type === 'upscale') { delete e.swaps[from]; removed++; }
+    }
+    if (!removed) return { written: [], warnings: [], removed: 0 };
+    e.active = null;
+    return { ...this.#saveAndMaterialize(), removed };
+  }
+
   setSky(mapName, to) {
     const e = this.mapEntry(mapName, true);
     e.sky = to ? { to } : null;
@@ -365,35 +417,56 @@ export class SwapStore {
     return { obj, file };
   }
 
-  // Every map that currently has texture swaps worth sharing.
+  // Every map with anything worth sharing (swaps, sky or lighting).
   packableMaps() {
     return Object.keys(this.data.maps)
-      .filter(n => this.#exportObj(n, true) !== null)
+      .filter(n => this.#exportObj(n, false) !== null)
       .sort();
   }
 
   // Team pack: the texture swaps of every customized map (or a chosen
   // subset) in one file - no sky or lighting, people keep their own.
-  exportPack(mapNames = null) {
+  // withStyle: include each map's sky + lighting in the pack (a personal
+  // "style" export); off = textures only, receivers keep their own sky.
+  exportPack(mapNames = null, packName = '', withStyle = false) {
     const names = mapNames && mapNames.length ? mapNames : this.packableMaps();
     const maps = [];
     for (const n of names) {
-      const one = this.#exportObj(n, true);
+      const one = this.#exportObj(n, !withStyle);
       if (one) maps.push(one);
     }
     if (!maps.length) throw new Error('nothing to export - no maps have texture swaps');
+    const sorted = maps.map(m => m.map).sort();
+    // user-chosen name wins; otherwise the filename mirrors the selection,
+    // so different packs never overwrite each other
+    let base = sanitize(String(packName || '').trim()).slice(0, 48).replace(/^[_.]+|[_.]+$/g, '');
+    if (!base) {
+      const act = sorted.length === 1 ? this.activePreset(sorted[0]) : null;
+      if (act) {
+        // single map exported while a named preset is loaded: name after it
+        base = `${sorted[0]}-${act}`;
+      } else {
+        const joined = 'teampack-' + sorted.join('+');
+        base = sorted.length <= 3 && joined.length <= 64
+          ? joined
+          : `teampack-${sorted.length}maps-` +
+            crypto.createHash('sha1').update(sorted.join(',')).digest('hex').slice(0, 6);
+      }
+      base = sanitize(base);
+    }
     const obj = {
       app: 'aq2-texture-swapper',
       kind: 'pack',
       format: 1,
+      name: base,
       exported: new Date().toISOString(),
       maps,
     };
     const dir = path.join(this.dir, 'exports');
     fs.mkdirSync(dir, { recursive: true });
-    const file = path.join(dir, 'teampack.aq2pack.json');
+    const file = path.join(dir, base + '.aq2pack.json');
     fs.writeFileSync(file, JSON.stringify(obj, null, 2));
-    return { file, count: maps.length, maps: maps.map(m => m.map) };
+    return { file, count: maps.length, maps: sorted };
   }
 
   importPack(obj) {
@@ -404,7 +477,10 @@ export class SwapStore {
     const imported = [];
     for (const one of obj.maps.slice(0, 500)) {
       try {
-        const r = this.importMap(one, true);
+        // entries that carry sky/lighting were exported as a full style and
+        // apply it; plain entries leave the receiver's sky/lighting alone
+        const hasStyle = Boolean((one && one.sky) || (one && one.lighting));
+        const r = this.importMap(one, !hasStyle);
         imported.push(r.map);
         warnings.push(...(r.warnings || []));
       } catch (e) {
@@ -425,8 +501,26 @@ export class SwapStore {
     if (!known) warnings.push(`map "${obj.map}" is not in this install - preset stored, applies if you get the map`);
     const customOk = /^custom\/[a-z0-9_.-]+\.png$/i;
     const swaps = {};
+    let pendingUpscales = 0;
     for (const [from, spec] of Object.entries(obj.swaps)) {
+      if (spec && spec.scale !== undefined) {
+        const sc = Number(spec.scale);
+        if (Number.isFinite(sc) && sc >= 0.25 && sc <= 8 && sc !== 1) spec.scale = sc;
+        else delete spec.scale;
+      }
       if (spec && spec.type === 'flat' && typeof spec.color === 'string') swaps[from] = spec;
+      else if (spec && spec.type === 'upscale') {
+        if (!this.install.fs.has('textures/' + from + '.wal')) {
+          warnings.push(`${from}: AI upscale skipped - no .wal here, the engine would tile it ${spec.factor || 4}x denser`);
+          continue;
+        }
+        const f = [2, 3, 4].includes(Number(spec.factor)) ? Number(spec.factor) : 4;
+        const clean = { type: 'upscale', factor: f };
+        if (spec.src === 'low') clean.src = 'low';
+        if (spec.model === 'smooth') clean.model = 'smooth';
+        swaps[from] = clean;
+        if (!this.install.upscale || !this.install.upscale.cachedFile(from, f, clean.src || 'auto', clean.model || 'detail')) pendingUpscales++;
+      }
       else if (spec && spec.type === 'invisible') {
         warnings.push(`invisible swap for ${from} skipped - the invisible feature was removed (cheat risk)`);
       }
@@ -456,6 +550,12 @@ export class SwapStore {
       e.lighting = Object.keys(impLighting).length ? impLighting : null;
     }
     const result = this.#saveAndMaterialize();
+    if (pendingUpscales) {
+      // the generated files are not shared (too big); the receiver's GPU makes them
+      warnings.unshift(`${pendingUpscales} AI-upscaled texture${pendingUpscales === 1 ? '' : 's'} need generating here - open the map and run "AI upscale textures"`);
+      const perTex = result.warnings.filter(w => !w.includes('AI upscale not generated'));
+      return { map: obj.map, known, warnings: warnings.concat(perTex), written: result.written, pendingUpscales };
+    }
     return { map: obj.map, known, warnings: warnings.concat(result.warnings), written: result.written };
   }
 
@@ -476,7 +576,14 @@ export class SwapStore {
   // Cover both: shadow every existing real variant, plus canonical .png
   // (hi-res) and .wal (low-res) so the swap works at any setting.
   // (.pcx-only sources aren't shadowed in low-res mode — rare, v1 limitation.)
-  #fromExts(fromTexture) {
+  #fromExts(fromTexture, spec = null) {
+    if (spec && spec.type === 'upscale') {
+      // an AI upscale only replaces what override mode samples; the .wal keeps
+      // its grid (tiling untouched) and low-res mode stays stock
+      const exts = new Set(['.png', '.tga', '.jpg'].filter(ext => this.install.fs.has('textures/' + fromTexture + ext)));
+      exts.add('.png');
+      return [...exts];
+    }
     const exts = new Set(ALL_TEX_EXTS.filter(ext => this.install.fs.has('textures/' + fromTexture + ext)));
     exts.add('.png');
     exts.add('.wal');
@@ -485,22 +592,55 @@ export class SwapStore {
 
   // Ensure the gen file for a swap spec exists in the requested extension.
   // Returns the link target path (game-relative) or null on failure.
-  #ensureGen(spec, ext, warnings) {
+  // Swap semantics: the replacement keeps ITS OWN size (looks identical on
+  // every surface it is applied to, like the engine always rendered links);
+  // the optional scale multiplies that. The 3D viewer mirrors this by
+  // scaling its UVs to the served file's grid.
+  #ensureGen(spec, ext, warnings, from = null) {
     let fileBase, make, alwaysWrite = false;
-    if (spec.type === 'flat') {
+    if (spec.type === 'upscale') {
+      const factor = [2, 3, 4].includes(Number(spec.factor)) ? Number(spec.factor) : 4;
+      const cached = from && this.install.upscale ? this.install.upscale.cachedFile(from, factor, spec.src === 'low' ? 'low' : 'auto', spec.model === 'smooth' ? 'smooth' : 'detail') : null;
+      if (!cached) {
+        warnings.push(`${from}: AI upscale not generated on this PC yet - run "AI upscale textures" on the map`);
+        return null;
+      }
+      // the gen name carries the cache file's content hash + recipe, so a
+      // different source (wal vs hi-res) or recipe never reuses a stale file
+      fileBase = 'up-' + sanitize(from) + '-' + path.basename(cached, '.png');
+      make = () => {
+        const buf = fs.readFileSync(cached);
+        if (ext === '.png') return buf;
+        return encodeAs(ext, decodeImage(buf, '.png', this.install.palette), this.install.palette, fileBase);
+      };
+    } else if (spec.type === 'flat') {
       const c2 = spec.color2 ? '-' + spec.color2.replace('#', '') : '';
       const sc = spec.scale && spec.scale !== 1 ? '-x' + String(spec.scale).replace('.', '_') : '';
       fileBase = `flat-${spec.color.replace('#', '')}-${spec.style || 'solid'}${c2}${sc}`;
       make = () => encodeAs(ext, flatImage(spec.color, spec.style, 128, spec.color2 || null, spec.scale || 1), this.install.palette, fileBase);
       alwaysWrite = true; // cheap to generate; guarantees pattern tweaks reach disk
     } else if (spec.type === 'stock') {
-      fileBase = sanitize(spec.to);
-      make = () => transcode(this.install.fs, this.install.palette, 'textures/' + spec.to, ext, fileBase);
+      const sc = spec.scale && spec.scale !== 1 ? '-x' + String(spec.scale).replace('.', '_') : '';
+      fileBase = sanitize(spec.to) + sc;
+      // Downscales (<1) shrink only the WAL: the wal carries the tiling grid,
+      // and in hi-res mode (r_texture_overrides 31) the engine tiles by that
+      // grid while sampling the image override - png/tga/jpg keep the source's
+      // full resolution so dense tiling stays sharp there.
+      make = () => {
+        const s = spec.scale || 1;
+        const eff = ext !== '.wal' && s < 1 ? 1 : s;
+        return transcode(this.install.fs, this.install.palette, 'textures/' + spec.to, ext, fileBase, eff);
+      };
     } else if (spec.type === 'custom') {
-      fileBase = 'custom-' + path.basename(spec.file, '.png');
+      const sc = spec.scale && spec.scale !== 1 ? '-x' + String(spec.scale).replace('.', '_') : '';
+      fileBase = 'custom-' + path.basename(spec.file, '.png') + sc;
       make = () => {
         const buf = fs.readFileSync(path.join(this.dataDir, spec.file));
-        return encodeAs(ext, decodeImage(buf, '.png', this.install.palette), this.install.palette, fileBase);
+        let img = decodeImage(buf, '.png', this.install.palette);
+        const s = spec.scale || 1;
+        // same rule as stock: image exts keep full res on downscales
+        if (s !== 1 && (ext === '.wal' || s > 1)) img = resizeToGrid(img, img.width * s, img.height * s);
+        return encodeAs(ext, img, this.install.palette, fileBase);
       };
     } else {
       warnings.push(`unknown swap type ${spec.type}`);
@@ -528,8 +668,21 @@ export class SwapStore {
     const written = [];
     const warnings = [];
     this.genDone = new Set();
+
+    // every lighting cvar the app can override anywhere - the save/restore
+    // plumbing (texswap_prev_* cvars + lightrestore.cfg) covers this union
+    const lightCvarUnion = [...new Set([
+      ...Object.keys((this.data.lighting && this.data.lighting.global) || {}),
+      ...Object.values(this.data.maps).flatMap(e => e && e.lighting ? Object.keys(e.lighting) : []),
+    ])];
     fs.mkdirSync(path.join(this.dir, 'gen'), { recursive: true });
 
+    // weapon skins ride along: their links must survive each map cfg's
+    // `unlink --all`, so every map cfg re-states them right after it (inline,
+    // never via exec - the engine's exec loop guard is nearly used up by a
+    // normal AQ2 startup chain)
+    const skinLines = this.install.skins && this.install.skins.active() ? this.install.skins.cfgLines() : [];
+    const skinsOn = skinLines.length > 0;
     const maps = this.install.listMaps();
     for (const map of maps) {
       if (map.error) continue;
@@ -538,13 +691,14 @@ export class SwapStore {
         `// TexSwap - auto-generated for map "${map.name}", do not edit`,
         'unlink --all',
       ];
+      if (skinsOn) lines.push('// weapon skins (Skin studio)', ...skinLines);
       let active = 0;
 
       if (entry) {
         for (const [from, spec] of Object.entries(entry.swaps)) {
-          const exts = this.#fromExts(from);
+          const exts = this.#fromExts(from, spec);
           for (const ext of exts) {
-            const target = this.#ensureGen(spec, ext, warnings);
+            const target = this.#ensureGen(spec, ext, warnings, from);
             if (target) {
               lines.push(`link textures/${from}${ext} ${target}`);
               active++;
@@ -576,23 +730,48 @@ export class SwapStore {
         }
       }
 
-      // lighting: global defaults + per-map overrides, only when managed & enabled
+      // lighting: the manage toggle gates the GLOBAL defaults; a per-map
+      // override is an explicit choice and always applies on its map
+      const cfgPath = path.join(this.dir, `${map.name}.cfg`);
+      let prev = null;
+      try { prev = fs.readFileSync(cfgPath, 'utf8'); } catch { /* new file */ }
       let lightingActive = false;
       const L = this.data.lighting;
-      if (this.enabled && L.manage) {
-        const merged = { ...L.global, ...(entry && entry.lighting ? entry.lighting : {}) };
-        const extra = (L.extra || '').split('\n').map(s => s.trim()).filter(Boolean);
-        if (Object.keys(merged).length || extra.length) {
-          lines.push('// lighting');
-          for (const [k, v] of Object.entries(merged)) lines.push(`set ${k} "${v}"`);
-          lines.push(...extra);
-          lightingActive = true;
-        }
+      const perMap = entry && entry.lighting ? entry.lighting : null;
+      const lightSet = new Map();
+      let extra = [];
+      if (this.enabled && (L.manage || perMap)) {
+        const merged = { ...(L.manage ? L.global : {}), ...(perMap || {}) };
+        extra = L.manage
+          ? (L.extra || '').split('\n').map(s => s.trim()).filter(Boolean)
+          : [];
+        for (const [k, v] of Object.entries(merged)) lightSet.set(k, v);
       }
 
-      // A map the user ever touched must r_reload even with zero links now,
-      // otherwise clearing a swap leaves the old image in the texture cache.
-      const touched = Boolean(this.data.maps[map.name]);
+      // sticky-cvar hygiene via engine macros: before overriding, the cfg
+      // SAVES the player's live values (whatever they are right now - launch
+      // config, an exec'd profile cfg, console tweaks) into texswap_prev_*
+      // and marks texswap_light_dirty; every cfg opens by invoking the
+      // restore alias (defined in hook.cfg), which puts the saved values
+      // back exactly once when something was overridden.
+      if (lightSet.size || extra.length) {
+        lines.push('texswap_lightrestore${texswap_light_dirty}');
+        for (const k of lightCvarUnion) lines.push(`set texswap_prev_${k} \${${k}}`);
+        lines.push('// lighting');
+        for (const [k, v] of lightSet) lines.push(`set ${k} "${v}"`);
+        lines.push(...extra);
+        lines.push('set texswap_light_dirty 1');
+        lightingActive = true;
+      } else if (lightCvarUnion.length) {
+        // nothing to set here: restore (with its own r_reload) only fires
+        // when a previous map's override left values behind
+        lines.push('texswap_lightrestorer${texswap_light_dirty}');
+      }
+
+      // A map that HAD links (from swaps or the missing-fix) must r_reload
+      // even with zero links now, otherwise unlink alone leaves the old
+      // images in the engine's texture cache and stock never comes back.
+      const touched = Boolean(this.data.maps[map.name]) || Boolean(prev && /^link /m.test(prev));
       if (active || lightingActive) {
         lines.push(`echo [texswap] applied ${active} link(s)${lightingActive ? ' + lighting' : ''} for ${map.name}`);
         lines.push('r_reload');
@@ -600,10 +779,7 @@ export class SwapStore {
         lines.push(`echo [texswap] ${map.name} back to stock`);
         lines.push('r_reload');
       }
-      const cfgPath = path.join(this.dir, `${map.name}.cfg`);
       const text = lines.join('\n') + '\n';
-      let prev = null;
-      try { prev = fs.readFileSync(cfgPath, 'utf8'); } catch { /* new file */ }
       if (prev !== text) {
         fs.writeFileSync(cfgPath, text);
         written.push(`texswap/${map.name}.cfg`);
@@ -620,8 +796,32 @@ export class SwapStore {
       // manual re-apply always forces a texture reload, so removing swaps
       // reverts visually even when the cfg itself carries no r_reload
       'bind F9 "exec texswap/${cl_mapname}.cfg; r_reload"',
+      '// lighting save/restore plumbing: per-map cfgs save your live values',
+      '// into texswap_prev_* before overriding and flag texswap_light_dirty;',
+      '// the restore aliases put them back (lightrestore.cfg is generated)',
+      'set texswap_light_dirty 0',
+      'alias texswap_lightrestore0 " "',
+      'alias texswap_lightrestorer0 " "',
+      'alias texswap_lightrestore1 "exec texswap/lightrestore.cfg"',
+      'alias texswap_lightrestorer1 "exec texswap/lightrestore.cfg;r_reload"',
+      // weapon skins/models link in at startup so the very first map already
+      // loads them (models are read before any map cfg runs)
+      ...(skinsOn ? ['// weapon skins (Skin studio)', ...skinLines] : []),
       '',
     ].join('\n');
+    const restoreCfg = [
+      '// TexSwap - puts your own light values back after a map override',
+      ...lightCvarUnion.map(k => `set ${k} \${texswap_prev_${k}}`),
+      'set texswap_light_dirty 0',
+      '',
+    ].join('\n');
+    const restorePath = path.join(this.dir, 'lightrestore.cfg');
+    let prevRestore = null;
+    try { prevRestore = fs.readFileSync(restorePath, 'utf8'); } catch { /* new file */ }
+    if (prevRestore !== restoreCfg) {
+      fs.writeFileSync(restorePath, restoreCfg);
+      written.push('texswap/lightrestore.cfg');
+    }
     const hookPath = path.join(this.dir, 'hook.cfg');
     let prevHook = null;
     try { prevHook = fs.readFileSync(hookPath, 'utf8'); } catch { /* new file */ }

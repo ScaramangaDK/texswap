@@ -12,7 +12,7 @@ const ZIP_EOCD = 0x06054b50;
 const ZIP_CDIR = 0x02014b50;
 const ZIP_LOCAL = 0x04034b50;
 
-function readZipIndex(file) {
+export function readZipIndex(file) {
   const fd = fs.openSync(file, 'r');
   try {
     const size = fs.fstatSync(fd).size;
@@ -64,7 +64,7 @@ function readZipIndex(file) {
   }
 }
 
-function readZipEntry(fd, entry) {
+export function readZipEntry(fd, entry) {
   const head = Buffer.alloc(30);
   fs.readSync(fd, head, 0, 30, entry.localOfs);
   if (head.readUInt32LE(0) !== ZIP_LOCAL) throw new Error('bad zip local header');
@@ -133,6 +133,7 @@ export class GameFS {
     this.index = new Map();
     this.archives = [];
     this.searchOrder = [];
+    this.statCache = new Map();
 
     for (const gd of gameDirs) {
       const dirAbs = path.join(rootDir, gd);
@@ -154,6 +155,7 @@ export class GameFS {
           const arch = isPak ? readPakIndex(abs) : readZipIndex(abs);
           arch.label = label;
           arch.isPak = isPak;
+          arch.file = abs;
           this.archives.push(arch);
           this.searchOrder.push(`${label} (${arch.entries.size} files)`);
           for (const [n, entry] of arch.entries) {
@@ -243,6 +245,25 @@ export class GameFS {
   sourceOf(p) {
     const ref = this.#lookup(p);
     return ref ? ref.source : null;
+  }
+
+  // Cache-validation key for a virtual path: identity + mtime + size of the
+  // backing real file (the archive file for packed entries). Null if missing.
+  statKey(p) {
+    const ref = this.#lookup(p);
+    if (!ref) return null;
+    const file = ref.abs || ref.arch.file;
+    let k = this.statCache.get(file);
+    if (k === undefined) {
+      try {
+        const st = fs.statSync(file);
+        k = `${file}|${st.mtimeMs}|${st.size}`;
+      } catch {
+        k = null;
+      }
+      this.statCache.set(file, k);
+    }
+    return k;
   }
 
   read(p) {

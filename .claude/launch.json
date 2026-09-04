@@ -1,0 +1,16 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "texswap",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "devserver.js",
+        "--port",
+        "5893"
+      ],
+      "port": 5893,
+      "autoPort": false
+    }
+  ]
+}
