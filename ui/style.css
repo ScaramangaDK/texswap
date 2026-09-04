@@ -1401,14 +1401,37 @@ footer .credit b { color: var(--accent-hi); font-weight: 600; }
   display: flex;
   flex-direction: column;
 }
-#upscaleOverlay .up-map { color: var(--accent-hi); font-size: 14px; }
+.up-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 52px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--line);
+  background:
+    linear-gradient(rgba(20, 25, 36, 0.93), rgba(20, 25, 36, 0.96)),
+    var(--concrete);
+  background-size: auto, 256px;
+}
+.up-top .up-title { font-size: 15px; font-weight: 650; letter-spacing: 0.01em; white-space: nowrap; }
+.up-top .up-map {
+  padding: 3px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: rgba(255, 140, 0, 0.1);
+  color: var(--accent-hi);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.up-top .up-status { flex: 1; color: var(--dim); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.up-top button { margin-left: auto; white-space: nowrap; }
 .up-main {
   flex: 1;
   min-height: 0;
   display: grid;
   grid-template-columns: 320px 1fr;
 }
-.up-side { border-right: 1px solid var(--line); border-left: none; }
+.up-side { overflow-y: auto; border-right: 1px solid var(--line); padding-bottom: 14px; }
 .up-side .rpbody { display: flex; flex-direction: column; gap: 8px; }
 .up-side .rpbody button { width: 100%; justify-content: center; }
 .up-side .rprow { display: flex; gap: 6px; }
@@ -1427,20 +1450,23 @@ footer .credit b { color: var(--accent-hi); font-weight: 600; }
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 16px;
+  height: 52px;
+  padding: 0 18px;
   border-bottom: 1px solid var(--line);
 }
 .up-toolbar input { width: 280px; }
+.up-toolbar select { font-size: 12.5px; }
+.up-toolbar .count { margin-left: auto; }
 .up-grid {
   --up-tile: 240px;
   flex: 1;
   overflow-y: auto;
-  padding: 14px 16px;
+  padding: 16px 18px;
   display: grid;
   grid-template-columns: repeat(auto-fill, var(--up-tile));
   grid-auto-rows: max-content;   /* auto rows collapse to 6px for overflow:hidden items in Chromium */
   justify-content: start;
-  gap: 12px;
+  gap: 14px;
   align-content: start;
 }
 .up-card {
@@ -1458,21 +1484,24 @@ footer .credit b { color: var(--accent-hi); font-weight: 600; }
 .up-card.done { border-style: dashed; }
 .up-card .up-imgbox { height: calc(var(--up-tile) - 2px); display: flex; align-items: center; justify-content: center; background: var(--checker); overflow: hidden; }   /* square: columns are fixed at --up-tile (aspect-ratio/padding tricks collapsed the grid rows in Chromium) */
 .up-card img { display: block; width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
-.up-card .up-name { padding: 6px 8px 0; font: 11.5px/1.2 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.up-card .up-meta { padding: 2px 8px 7px; font-size: 11px; color: var(--faint); }
+.up-card .up-name { padding: 9px 11px 0; font: 12px/1.3 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.up-card .up-meta { padding: 3px 11px 10px; font-size: 11px; line-height: 1.35; color: var(--faint); }
 .up-card .up-badge {
-  position: absolute; top: 6px; left: 6px;
-  padding: 1px 6px; border-radius: 4px;
-  font: 10px/1.5 var(--mono); letter-spacing: 0.02em;
-  background: rgba(14, 17, 22, 0.8); color: var(--text);
+  position: absolute; top: 8px; left: 8px;
+  padding: 2px 8px; border-radius: 4px;
+  font: 10.5px/1.5 var(--mono); letter-spacing: 0.02em;
+  background: rgba(14, 17, 22, 0.82); color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 .up-card.done .up-badge { color: var(--good); }
 .up-card .up-tick {
-  position: absolute; top: 6px; right: 6px;
-  width: 18px; height: 18px; border-radius: 4px;
+  position: absolute; top: 8px; right: 8px;
+  width: 20px; height: 20px; border-radius: 4px;
   border: 1px solid var(--line-strong); background: rgba(14, 17, 22, 0.8);
   display: flex; align-items: center; justify-content: center;
   font-size: 12px; color: var(--on-accent);
 }
 .up-card.sel .up-tick { background: var(--accent); border-color: var(--accent); }
 .up-empty { grid-column: 1 / -1; color: var(--faint); padding: 30px; text-align: center; }
+.up-bar { height: 8px; border-radius: 4px; background: var(--bg3); overflow: hidden; margin: 8px 0; }
+.up-bar div { height: 100%; background: var(--accent); transition: width 0.3s; }

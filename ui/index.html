@@ -141,14 +141,14 @@
   </div>
 
   <div id="upscaleOverlay" class="hidden">
-    <div class="sk-top">
-      <span class="sk-title">✨ AI upscale</span>
+    <div class="up-top">
+      <span class="up-title">✨ AI upscale</span>
       <span id="upMapName" class="mono up-map"></span>
-      <span id="upStatus" class="vhover mono"></span>
-      <button id="upClose">✕ close (Esc)</button>
+      <span id="upStatus" class="mono up-status"></span>
+      <button id="upClose" title="Close (Esc)">✕ Close</button>
     </div>
     <div class="up-main">
-      <aside class="sk-side up-side">
+      <aside class="up-side">
         <div class="rpsection"><div class="rphead">Settings</div><div class="rpbody up-form">
           <label>Source
             <select id="upSrc">
@@ -191,7 +191,7 @@
         <div class="rpsection"><div class="rphead">Run</div><div class="rpbody">
           <button class="primary" id="upStart">Upscale</button>
           <div id="upProgress" class="hidden">
-            <div class="sk-bar"><div id="upBar"></div></div>
+            <div class="up-bar"><div id="upBar"></div></div>
             <div id="upProgText" class="count mono"></div>
             <button class="danger" id="upCancel">Cancel</button>
           </div>
