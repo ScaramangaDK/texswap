@@ -12,6 +12,7 @@ import { decodeImage } from './decoders.js';
 import { encodePng, resolveImage, resizeRgba } from './thumbs.js';
 import { resizeToGrid, encodeAs } from './gen.js';
 import { parseMd2, md2Info, isMd2, skinBase, md2ToClient, drawUvOverlay } from './md2.js';
+import { parseMd3, md3Info, isMd3, md3ToClient } from './md3.js';
 import { encodePcxFile } from './pcx.js';
 import { upscalePng } from './tools.js';
 
@@ -44,6 +45,28 @@ function kindOf(name) {
   if (name.startsWith('v_')) return 'view';
   if (name.startsWith('g_')) return 'world';
   return 'other';
+}
+
+// An MD3 presented through the MD2 field names the studio already uses:
+// one flattened triangle list whose st index is the vertex index, UVs in
+// 0..1 (skinW = skinH = 1 so the overlay math is a no-op), plus the raw
+// parse for the client payload. MD3 has no skin layout size of its own.
+function md3AsMd2(m) {
+  const nVerts = m.surfaces.reduce((a, x) => a + x.nVerts, 0);
+  const nTris = m.surfaces.reduce((a, x) => a + x.nTris, 0);
+  const tris = new Uint32Array(nTris * 6);
+  const st = new Float32Array(nVerts * 2);
+  let vb = 0, tb = 0;
+  for (const x of m.surfaces) {
+    for (let t = 0; t < x.nTris; t++) for (let k = 0; k < 3; k++) {
+      tris[(tb + t) * 6 + k] = vb + x.tris[t * 3 + k];
+      tris[(tb + t) * 6 + 3 + k] = vb + x.tris[t * 3 + k];
+    }
+    st.set(x.uvs, vb * 2);
+    vb += x.nVerts; tb += x.nTris;
+  }
+  return { format: 'md3', raw: m, skinW: 1, skinH: 1, nFrames: m.nFrames, nVerts, nTris, tris, st,
+    skins: m.surfaces.flatMap(x => x.shaders), frames: m.frames.map(f => ({ name: f.name })) };
 }
 
 function safeName(name) {
@@ -127,7 +150,7 @@ export class SkinStore {
       ? fs.readFileSync(path.join(this.dataDir, e.model.file))
       : this.install.fs.read(`models/weapons/${name}/tris.md2`);
     if (!buf) throw new Error('model file missing: ' + name);
-    const parsed = parseMd2(buf);
+    const parsed = isMd3(buf) ? md3AsMd2(parseMd3(buf)) : parseMd2(buf);
     this.parsedCache.set(key, parsed);
     return parsed;
   }
@@ -182,7 +205,7 @@ export class SkinStore {
         stock: stock ? { frames: stock.frames, skinW: stock.skinW, skinH: stock.skinH, tris: stock.tris, skin: stock.skins[0] || null } : null,
         skin: e.skin ? { w: e.skin.w, h: e.skin.h, label: e.skin.label || '', at: e.skin.at } : null,
         canUndo: Boolean(e.skinPrev),
-        model: e.model ? { frames: e.model.frames, skinW: e.model.skinW, skinH: e.model.skinH, label: e.model.label || '', at: e.model.at, skin: (e.model.skins || [])[0] || null } : null,
+        model: e.model ? { frames: e.model.frames, format: e.model.format || 'md2', skinW: e.model.skinW, skinH: e.model.skinH, label: e.model.label || '', at: e.model.at, skin: (e.model.skins || [])[0] || null } : null,
         stockSkin: null,
         error: stock ? null : 'not a readable md2',
       };
@@ -212,7 +235,8 @@ export class SkinStore {
   }
 
   clientModel(name) {
-    return md2ToClient(this.parsedModel(this.#checkWeapon(name)));
+    const p = this.parsedModel(this.#checkWeapon(name));
+    return p.format === 'md3' ? md3ToClient(p.raw) : md2ToClient(p);
   }
 
   // PNG of the current or stock skin, optionally with the UV wireframe.
@@ -256,6 +280,7 @@ export class SkinStore {
       // with a replacement model the install's skin belongs to another
       // model, so the header of the new model is the only reference
       const e = this.#entry(name);
+      if (e && e.model && m.format === 'md3') return; // no layout size to compare against
       const stock = e && e.model ? null : this.stockSkinImage(name);
       const rw = stock ? stock.width : m.skinW, rh = stock ? stock.height : m.skinH;
       const a = w / h, b = rw / rh;
@@ -300,16 +325,17 @@ export class SkinStore {
   setModel(name, buf, label = '') {
     name = this.#checkWeapon(name);
     const warnings = [];
-    if (!isMd2(buf)) throw new Error('not a Quake 2 md2 model');
-    const parsed = parseMd2(buf); // throws on anything broken
+    const md3 = isMd3(buf);
+    if (!isMd2(buf) && !md3) throw new Error('not a Quake 2 md2 or Quake 3 md3 model');
+    const parsed = md3 ? md3AsMd2(parseMd3(buf)) : parseMd2(buf); // throws on anything broken
     const stock = md2Info(this.install.fs.read(`models/weapons/${name}/tris.md2`));
     if (stock && parsed.nFrames < stock.frames) {
       warnings.push(`${name}: replacement has ${parsed.nFrames} frames, the original ${stock.frames} - the game plays the original's frame numbers, so some animations may look wrong`);
     }
     const e = this.#entry(name, true);
     this.#dropFile(e.model);
-    const file = this.#storeFile(name, '.md2', buf);
-    e.model = { file, frames: parsed.nFrames, skinW: parsed.skinW, skinH: parsed.skinH, skins: parsed.skins.slice(0, 4), label: String(label || '').slice(0, 60), at: Date.now() };
+    const file = this.#storeFile(name, md3 ? '.md3' : '.md2', buf);
+    e.model = { file, format: md3 ? 'md3' : 'md2', frames: parsed.nFrames, skinW: parsed.skinW, skinH: parsed.skinH, skins: parsed.skins.slice(0, 4), label: String(label || '').slice(0, 60), at: Date.now() };
     this.parsedCache.clear();
     this.imgCache.clear();
     this.pngCache.clear();
@@ -383,12 +409,16 @@ export class SkinStore {
         keep.add(name);
         const rel = `texswap/skins/${name}`;
         if (e.model) {
+          // the engine picks MD2/MD3 by the file's header, so an MD3 can
+          // shadow tris.md2 through the very same link
+          const ext = e.model.format === 'md3' ? '.md3' : '.md2';
           const src = path.join(this.dataDir, e.model.file);
-          const dst = path.join(out, 'tris.md2');
+          const dst = path.join(out, 'tris' + ext);
           let same = false;
           try { same = fs.statSync(dst).size === fs.statSync(src).size && fs.readFileSync(dst).equals(fs.readFileSync(src)); } catch { /* missing */ }
-          if (!same) { fs.copyFileSync(src, dst); written.push(`${rel}/tris.md2`); }
-          lines.push(`link ${dir}/tris.md2 ${rel}/tris.md2`);
+          if (!same) { fs.copyFileSync(src, dst); written.push(`${rel}/tris${ext}`); }
+          try { fs.unlinkSync(path.join(out, ext === '.md3' ? 'tris.md2' : 'tris.md3')); } catch { /* none */ }
+          lines.push(`link ${dir}/tris.md2 ${rel}/tris${ext}`);
         }
         if (e.skin) {
           const base = skinBase(parsed.skins[0], dir);
@@ -411,7 +441,7 @@ export class SkinStore {
                 if (ext === '.png') bytes = fitted ? encodePng(img) : master;
                 else if (ext === '.pcx') {
                   if (!this.install.palette) throw new Error('no Q2 palette in this install');
-                  bytes = encodePcxFile(resizeToGrid(img, parsed.skinW, parsed.skinH), this.install.palette);
+                  bytes = encodePcxFile(parsed.format === 'md3' ? img : resizeToGrid(img, parsed.skinW, parsed.skinH), this.install.palette);
                 } else bytes = encodeAs(ext, img, this.install.palette, name);
                 fs.writeFileSync(path.join(out, 'skin' + ext), bytes);
                 written.push(`${rel}/skin${ext}`);
@@ -464,7 +494,7 @@ export class SkinStore {
       obj.skin = { w: e.skin.w, h: e.skin.h, label: e.skin.label || '', b64: fs.readFileSync(path.join(this.dataDir, e.skin.file)).toString('base64') };
     }
     if (e.model) {
-      obj.model = { frames: e.model.frames, label: e.model.label || '', b64: fs.readFileSync(path.join(this.dataDir, e.model.file)).toString('base64') };
+      obj.model = { frames: e.model.frames, format: e.model.format || 'md2', label: e.model.label || '', b64: fs.readFileSync(path.join(this.dataDir, e.model.file)).toString('base64') };
     }
     return obj;
   }

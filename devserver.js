@@ -262,12 +262,12 @@ async function handleApi(req, url, res) {
         const ext = path.extname(String(body.filename)).toLowerCase();
         const label = String(body.label || path.basename(String(body.filename))).slice(0, 60);
         try {
-          const r = ext === '.md2'
+          const r = ext === '.md2' || ext === '.md3'
             ? inst.skins.setModel(body.name, buf, label)
             : ['.png', '.jpg', '.jpeg', '.tga', '.pcx'].includes(ext)
               ? inst.skins.setSkinImage(body.name, buf, ext === '.jpeg' ? '.jpg' : ext, label)
               : null;
-          if (!r) return json(res, 400, { error: 'unsupported file type ' + ext + ' (png, jpg, tga, pcx or md2)' });
+          if (!r) return json(res, 400, { error: 'unsupported file type ' + ext + ' (png, jpg, tga, pcx, md2 or md3)' });
           return json(res, 200, { ok: true, ...r, weapons: inst.skins.listWeapons() });
         } catch (e) {
           return json(res, 400, { error: e.message });

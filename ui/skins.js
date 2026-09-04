@@ -178,9 +178,9 @@ function renderSide() {
     : w.stockSkin ? `${w.stockSkin.w}×${w.stockSkin.h} ${w.stockSkin.ext.slice(1)} (stock)` : 'no skin image found';
   info.innerHTML = `
     <div class="sk-infoname">${esc(w.label)}</div>
-    <div class="sk-inforow"><span>model</span><span class="mono">${w.model ? 'custom' + (w.model.label ? ' · ' + esc(w.model.label) : '') : 'stock'}</span></div>
+    <div class="sk-inforow"><span>model</span><span class="mono">${w.model ? (w.model.format === 'md3' ? 'custom MD3' : 'custom') + (w.model.label ? ' · ' + esc(w.model.label) : '') : 'stock'}</span></div>
     <div class="sk-inforow"><span>frames</span><span class="mono">${m.frames || '?'}${w.model && w.stock ? ' <small>(stock ' + w.stock.frames + ')</small>' : ''}</span></div>
-    <div class="sk-inforow"><span>layout</span><span class="mono">${m.skinW || '?'}×${m.skinH || '?'}</span></div>
+    <div class="sk-inforow"><span>layout</span><span class="mono">${w.model && w.model.format === 'md3' ? 'MD3 (UVs 0-1, any skin size)' : `${m.skinW || '?'}×${m.skinH || '?'}`}</span></div>
     <div class="sk-inforow"><span>skin</span><span class="mono">${skinTxt}</span></div>
     ${w.error ? `<div class="sk-err">${esc(w.error)}</div>` : ''}
   `;
@@ -848,7 +848,7 @@ function bindUi() {
     if (f) upload(f, fileKind);
   });
   $('skUpload').addEventListener('click', () => pick('skin', '.png,.jpg,.jpeg,.tga,.pcx'));
-  $('skModel').addEventListener('click', () => pick('model', '.md2'));
+  $('skModel').addEventListener('click', () => pick('model', '.md2,.md3'));
   $('skUpscale').addEventListener('click', openUpscale);
   $('skRestyle').addEventListener('click', enterRestyle);
   $('rsApply').addEventListener('click', applyRestyle);
