@@ -30,6 +30,8 @@ per-frame rigid motion. Check with `--render dir` (7 views) and
 
     $B -b -P tools/hands/rig_pose.py -- arms_uv.blend arms_joints.json pose_m4.json rig_m4.blend          --md2 v_m4/tris.md2 --skin v_m4/skin.png --band arm_band.png --md3 out.md3 --outskin out_skin.png --render dir
 
+Options added later: `thumb_flat` (press the thumb into the palm plane so it rests along the handguard), ortho views in `--render`, `render_md3.py --xray` (see-through gun: the M4 pistol grip is hidden inside the fist, the big block in front of it is the magazine - easy to misread).
+
 Notes: `curl_sign` is -1 (bone local X points so that +angle hyperextends);
 `scale` 152 = MakeHuman metres -> gun units for a hand a bit bigger than life.
 

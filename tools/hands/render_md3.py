@@ -7,11 +7,13 @@ argv = sys.argv[sys.argv.index('--') + 1:]
 path, out, fr = argv[0], argv[1], int(argv[2])
 cam_p = Vector([float(x) for x in argv[3].split(',')]); aim = Vector([float(x) for x in argv[4].split(',')])
 fov = float(argv[5]) if len(argv) > 5 else 50
+WIRE_GUN = '--wiregun' in argv
 f = open(path, 'rb').read()
 (ident, ver, name, flags, nfr, ntag, nsurf, nskin, ofr, otag, osurf, oend) = struct.unpack('<4si64siiiiiiiii', f[:108])
 for ob in list(bpy.data.objects): bpy.data.objects.remove(ob)
 scene = bpy.context.scene
 scene.render.engine = 'BLENDER_WORKBENCH'; scene.display.shading.light = 'STUDIO'; scene.display.shading.color_type = 'OBJECT'
+if '--xray' in argv: scene.display.shading.show_xray = True; scene.display.shading.xray_alpha = 0.45
 scene.render.resolution_x, scene.render.resolution_y = 960, 640
 o = osurf
 for si in range(nsurf):
@@ -26,8 +28,11 @@ for si in range(nsurf):
         me = bpy.data.meshes.new(label); me.from_pydata([tuple(v) for v in xyz], [], tsel); me.update()
         for p in me.polygons: p.use_smooth = (label == 'arm')
         ob = bpy.data.objects.new(label, me); bpy.context.collection.objects.link(ob); ob.color = col
+        if label == 'gun' and WIRE_GUN: ob.display_type = 'WIRE'; ob.color = (1, 0.9, 0.2, 1)
     o += osend
 cam_data = bpy.data.cameras.new('cam'); cam = bpy.data.objects.new('cam', cam_data); bpy.context.collection.objects.link(cam)
-cam_data.clip_start = 0.5; cam_data.clip_end = 2000; cam_data.angle = math.radians(fov); scene.camera = cam
+cam_data.clip_start = 0.5; cam_data.clip_end = 2000; scene.camera = cam
+if fov <= 0: cam_data.type = 'ORTHO'; cam_data.ortho_scale = -fov if fov < 0 else 120
+else: cam_data.angle = math.radians(fov)
 cam.location = cam_p; cam.rotation_euler = (aim - cam_p).to_track_quat('-Z', 'Y').to_euler()
 scene.render.filepath = os.path.abspath(out); bpy.ops.render.render(write_still=True); print('rendered', out)

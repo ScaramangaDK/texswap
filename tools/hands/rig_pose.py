@@ -130,9 +130,18 @@ def build_arm(side):
             a = math.atan2(t_dir.cross(i_dir).dot(n), t_dir.dot(i_dir))
             b0.rotation_euler = (0, 0, a)
             bpy.context.view_layer.update()
+            if P.get('thumb_flat'):
+                # press the thumb down into the palm plane (it naturally stands ~30 deg out of it)
+                t_dir = unit(b0.tail - b0.head); flat = unit(t_dir - n * t_dir.dot(n))
+                q = t_dir.rotation_difference(flat)
+                b0.matrix = Matrix.Translation(b0.head) @ q.to_matrix().to_4x4() @ Matrix.Translation(-b0.head) @ b0.matrix
+                bpy.context.view_layer.update()
         for k in range(3):
             b = pb['f%d_%d' % (fi, k)]
-            b.rotation_euler = (math.radians(angs[k]) * P.get('curl_sign', 1), 0, b.rotation_euler.z if (fi == 1 and k == 0) else 0)
+            if fi == 1 and k == 0 and P.get('thumb_along'):
+                b.rotation_euler = (math.radians(angs[k]) * P.get('curl_sign', 1) + b.rotation_euler.x, b.rotation_euler.y, b.rotation_euler.z)
+            else:
+                b.rotation_euler = (math.radians(angs[k]) * P.get('curl_sign', 1), 0, 0)
     bpy.context.view_layer.update()
     # --- debug: actual posed hand frame vs. target ---
     Mw = rig.matrix_world
@@ -171,8 +180,13 @@ if RENDER:
     cam_data.clip_start = 0.5; cam_data.clip_end = 2000; scene.camera = cam
     views = [('eye', (0, 0, 0), (60, -18, -14), 100), ('side', (40, -160, -20), (40, -20, -20), 40), ('top', (40, -20, 140), (40, -20, -20), 40),
              ('grip', (50, -75, -45), (22, -24, -22), 35), ('grip_below', (35, -30, -85), (22, -23, -22), 40), ('guard', (70, -45, -60), (63, -20, -16), 40), ('guard_front', (110, -10, -30), (62, -20, -12), 40)]
+    views += [('side_ortho', (40, -200, -20), (40, -20, -20), 0), ('top_ortho', (40, -20, 200), (40, -20, -20), 0), ('grip_ortho', (22, -200, -22), (22, -24, -22), -45), ('guard_ortho', (62, -200, -14), (62, -20, -14), -45)]
     for name, loc, aim, fov in views:
-        cam.location = loc; cam.rotation_euler = (Vector(aim) - Vector(loc)).to_track_quat('-Z', 'Y').to_euler(); cam_data.angle = math.radians(fov)
+        cam.location = loc; cam.rotation_euler = (Vector(aim) - Vector(loc)).to_track_quat('-Z', 'Y').to_euler()
+        if fov <= 0:
+            cam_data.type = 'ORTHO'; cam_data.ortho_scale = 120 if fov == 0 else -fov
+        else:
+            cam_data.type = 'PERSP'; cam_data.angle = math.radians(fov)
         scene.render.filepath = os.path.join(RENDER, name + '.png'); bpy.ops.render.render(write_still=True)
     print('renders in', RENDER)
 
