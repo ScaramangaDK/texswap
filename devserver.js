@@ -537,12 +537,18 @@ async function handleApi(req, url, res) {
       const inst = getInstall(dir);
       const size = Math.min(1024, Number(q.get('size')) || 128);
       let png = null;
+      let fallback = false;
       if (q.get('tex')) {
         png = inst.thumbPng('textures/' + q.get('tex'), size, q.get('res') === 'low', q.get('alpha') === '1')
           || inst.placeholderPng(size);
       }
       else if (q.get('custom')) png = inst.customThumbPng(q.get('custom'), size);
-      else if (q.get('upscale')) png = inst.upscale.thumbPng(q.get('upscale'), Number(q.get('factor')) || 4, size, q.get('src') === 'low' ? 'low' : 'auto', q.get('model') === 'smooth' ? 'smooth' : 'detail') || inst.thumbPng('textures/' + q.get('upscale'), size);
+      else if (q.get('upscale')) {
+        png = inst.upscale.thumbPng(q.get('upscale'), Number(q.get('factor')) || 4, size, q.get('src') === 'low' ? 'low' : 'auto', q.get('model') === 'smooth' ? 'smooth' : 'detail');
+        // no generated file yet: serve the original, but never let the
+        // browser cache that stand-in under the upscale's URL
+        if (!png) { png = inst.thumbPng('textures/' + q.get('upscale'), size); fallback = true; }
+      }
       else if (q.get('sky')) png = inst.skyThumbPng(q.get('sky'), size);
       else if (q.get('flat')) {
         // generate at the requested size directly - resampling a fixed-size
@@ -554,7 +560,7 @@ async function handleApi(req, url, res) {
       if (!png) { res.writeHead(404); return res.end(); }
       // user-uploaded files can be replaced under the same name - keep those
       // fresh; install textures/skies only change on rescan (which busts URLs)
-      const age = q.get('custom') ? 600 : 86400;
+      const age = fallback ? 0 : q.get('custom') ? 600 : 86400;
       res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'max-age=' + age });
       return res.end(png);
     }
