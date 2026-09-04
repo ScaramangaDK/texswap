@@ -139,10 +139,11 @@ export class Install {
     this.texCatalog = null;
     this.skyCatalog = null;
     this.swaps = new SwapStore(this);
-    // the weapon Skin studio was taken out of this build (2026-09-04; it returns in a
-    // later update): drop its game-side files once and restate the cfgs without its links
-    this.#dropLegacySkins();
     this.upscale = new TextureUpscaler(this);
+    // the weapon Skin studio was taken out of this build (2026-09-04; it returns in a
+    // later update): drop its game-side files once and restate the cfgs without its
+    // links - after the upscaler exists, or the restated cfgs would lose upscale links
+    try { this.swaps.dropLegacySkins(); } catch { /* the next swap action rewrites the cfgs */ }
     if (this.swaps.pendingHeal) {
       this.swaps.pendingHeal = false;
       try { this.swaps.materialize(); } catch { /* healed on next action */ }
@@ -188,15 +189,6 @@ export class Install {
     this.dimsDisk = mine.dims || {};
     this.scanDirty = 0;
     return this.scanCache;
-  }
-
-  #dropLegacySkins() {
-    const skinsDir = path.join(this.swaps.dir, 'skins');
-    if (!fs.existsSync(skinsDir)) return;
-    try {
-      fs.rmSync(skinsDir, { recursive: true, force: true });
-      this.swaps.materialize();
-    } catch { /* the next swap action rewrites the cfgs anyway */ }
   }
 
   #saveScanCache() {

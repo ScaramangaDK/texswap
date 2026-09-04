@@ -106,6 +106,7 @@ export class SwapStore {
             : {},
           maps: raw.maps,
           gridSemantics: raw.gridSemantics || 0,
+          skinsRemoved: Boolean(raw.skinsRemoved),
         };
         // the invisible swap type was removed before release (see-through
         // surfaces are a cheat risk): drop any stored ones, presets included.
@@ -133,6 +134,17 @@ export class SwapStore {
   // files (only the wal shrinks, carrying the tiling grid), so hi-res mode
   // (r_texture_overrides 31) stays sharp at dense tiling. v4: gen wals carry
   // transparency as palette index 255, so alphatest swaps work in wal mode.
+  // v1.5 -> this build: the weapon Skin studio is gone. Its game-side files and
+  // the inline skin link lines are dropped once per install (flag persisted).
+  dropLegacySkins() {
+    if (this.data.skinsRemoved) return;
+    if (!this.install.upscale) throw new Error('dropLegacySkins needs the upscaler (materialize would skip upscale links)');
+    try { fs.rmSync(path.join(this.dir, 'skins'), { recursive: true, force: true }); } catch { /* not there */ }
+    this.materialize();
+    this.data.skinsRemoved = true;
+    try { this.#saveJson(); } catch { /* saved on next action */ }
+  }
+
   #migrateGridSemantics() {
     if (this.data.gridSemantics === 4) return;
     this.data.gridSemantics = 4;
