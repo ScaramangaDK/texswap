@@ -678,12 +678,6 @@ export class SwapStore {
     ])];
     fs.mkdirSync(path.join(this.dir, 'gen'), { recursive: true });
 
-    // weapon skins ride along: their links must survive each map cfg's
-    // `unlink --all`, so every map cfg re-states them right after it (inline,
-    // never via exec - the engine's exec loop guard is nearly used up by a
-    // normal AQ2 startup chain)
-    const skinLines = this.install.skins && this.install.skins.active() ? this.install.skins.cfgLines() : [];
-    const skinsOn = skinLines.length > 0;
     const maps = this.install.listMaps();
     for (const map of maps) {
       if (map.error) continue;
@@ -692,7 +686,6 @@ export class SwapStore {
         `// TexSwap - auto-generated for map "${map.name}", do not edit`,
         'unlink --all',
       ];
-      if (skinsOn) lines.push('// weapon skins (Skin studio)', ...skinLines);
       let active = 0;
 
       if (entry) {
@@ -805,9 +798,6 @@ export class SwapStore {
       'alias texswap_lightrestorer0 " "',
       'alias texswap_lightrestore1 "exec texswap/lightrestore.cfg"',
       'alias texswap_lightrestorer1 "exec texswap/lightrestore.cfg;r_reload"',
-      // weapon skins/models link in at startup so the very first map already
-      // loads them (models are read before any map cfg runs)
-      ...(skinsOn ? ['// weapon skins (Skin studio)', ...skinLines] : []),
       '',
     ].join('\n');
     const restoreCfg = [

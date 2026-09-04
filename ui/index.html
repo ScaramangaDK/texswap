@@ -140,88 +140,6 @@
     </div>
   </div>
 
-  <div id="skinOverlay" class="hidden">
-    <div class="sk-top">
-      <span class="sk-title">🔫 Skin studio</span>
-      <span id="skStatus" class="vhover mono"></span>
-      <button id="skEnabled" title="Turn every custom weapon skin/model on or off in the game (your work is kept)"></button>
-      <button id="skClose">✕ close (Esc)</button>
-    </div>
-    <div class="sk-main">
-      <aside class="sk-list" id="skList"></aside>
-      <section class="sk-center">
-        <div class="sk-3d">
-          <canvas id="skCanvas"></canvas>
-          <div class="sk-3dbar">
-            <button id="skViewGame" class="small sel" title="From the player's eyes, like in the game">game view</button>
-            <button id="skViewOrbit" class="small" title="Drag to turn the model around, wheel to zoom">orbit</button>
-            <label class="check"><input type="checkbox" id="skAnim"> animate</label>
-            <input type="range" id="skFrame" min="0" max="0" value="0" title="frame">
-            <span id="skFrameLbl" class="mono"></span>
-          </div>
-          <div id="skHint" class="sk-hint"></div>
-        </div>
-        <div class="sk-2d">
-          <div class="sk-2dbar">
-            <span class="rphead">Skin image</span>
-            <span id="skImgInfo" class="count"></span>
-            <label class="check" title="The model's triangles drawn over the image - shows where every part of the gun lives"><input type="checkbox" id="skUv"> UV layout</label>
-            <label class="check" title="Hold to see the install's original skin instead"><input type="checkbox" id="skStock"> show stock</label>
-          </div>
-          <div class="sk-imgwrap" id="skImgWrap"><div class="sk-imgbox"><img id="skImg" alt="skin"><canvas id="skProtect" class="hidden"></canvas></div></div>
-        </div>
-      </section>
-      <aside class="sk-side" id="skSide">
-        <div class="rpsection"><div class="rphead">Weapon</div><div class="rpbody" id="skInfo"></div></div>
-        <div class="rpsection"><div class="rphead">Collection <span id="skColCount" class="count"></span></div><div class="rpbody" id="skCollection"></div>
-          <div class="rpbody"><button id="skColSave" title="Keep the current skin (and model) in your collection under a name - switch back to it any time">★ Save to collection…</button></div></div>
-        <div class="rpsection"><div class="rphead">Skin</div><div class="rpbody">
-          <button id="skUpload" title="png, jpg, tga or pcx - drawn for this model's UV layout">🖼️ Upload skin…</button>
-          <button id="skUpscale" title="Sharpen and enlarge the current skin with Real-ESRGAN (AI) - runs on your GPU">✨ AI upscale…</button>
-          <button id="skRestyle" title="Base materials (gold, chrome, camo…), pattern overlays and color adjustments - previewed live on the model">🎨 Restyle…</button>
-          <button id="skTemplate" title="Saves the skin with the UV wireframe on top as a png you can paint over in any image editor">📐 Save UV template</button>
-          <button id="skUndo" class="hidden" title="Go back to the skin you had before the last change">↶ Undo last skin</button>
-          <button id="skResetSkin" class="danger hidden">Back to stock skin</button>
-        </div></div>
-        <div class="rpsection"><div class="rphead">Model</div><div class="rpbody">
-          <button id="skModel" title="Swap the whole weapon for another model: Quake 2 md2 or Quake 3 md3 (the engine loads both)">🧊 Replace model (.md2/.md3)…</button>
-          <button id="skResetModel" class="danger hidden">Back to stock model</button>
-        </div></div>
-        <div class="rpsection"><div class="rphead">Sharing</div><div class="rpbody">
-          <button id="skExport" title="One .aq2skin.json file with this weapon's skin and model - send it to friends">🎁 Export skin…</button>
-          <button id="skImport" title="Load a .aq2skin.json from a friend">📥 Import skin…</button>
-        </div></div>
-      </aside>
-      <aside class="sk-side hidden" id="skRestylePanel">
-        <div class="rpsection"><div class="rphead">Material</div><div class="rpbody">
-          <div class="sk-swatches" id="rsMaterials"></div>
-          <label class="sk-slider"><span>Strength</span><input type="range" id="rs_strength" min="0" max="100" value="85"><span class="mono" id="rsv_strength">85%</span></label>
-        </div></div>
-        <div class="rpsection"><div class="rphead">Pattern</div><div class="rpbody">
-          <select id="rsPattern"></select>
-          <label class="sk-slider"><span>Size</span><input type="range" id="rs_patternScale" min="25" max="400" value="100"><span class="mono" id="rsv_patternScale">1.0x</span></label>
-          <label class="sk-slider"><span>Opacity</span><input type="range" id="rs_patternOpacity" min="0" max="100" value="60"><span class="mono" id="rsv_patternOpacity">60%</span></label>
-        </div></div>
-        <div class="rpsection"><div class="rphead">Color</div><div class="rpbody">
-          <label class="sk-slider"><span>Hue</span><input type="range" id="rs_hue" min="-180" max="180" value="0"><span class="mono" id="rsv_hue">0°</span></label>
-          <label class="sk-slider"><span>Saturation</span><input type="range" id="rs_sat" min="0" max="250" value="100"><span class="mono" id="rsv_sat">100%</span></label>
-          <label class="sk-slider"><span>Brightness</span><input type="range" id="rs_bright" min="30" max="200" value="100"><span class="mono" id="rsv_bright">100%</span></label>
-          <label class="sk-slider"><span>Contrast</span><input type="range" id="rs_contrast" min="30" max="220" value="100"><span class="mono" id="rsv_contrast">100%</span></label>
-        </div></div>
-        <div class="rpsection"><div class="rphead">Protect areas</div><div class="rpbody">
-          <p class="mnote">Drag boxes on the skin image below the model to keep those parts unchanged - the hands, usually. Click a box to remove it.</p>
-          <span id="rsProtectInfo" class="count"></span>
-        </div></div>
-        <div class="rpsection"><div class="rpbody">
-          <button class="primary" id="rsApply">Apply as new skin</button>
-          <button id="rsReset">Reset all</button>
-          <button id="rsCancel">Cancel</button>
-        </div></div>
-      </aside>
-    </div>
-    <input type="file" id="skFile" class="hidden">
-  </div>
-
   <div id="upscaleOverlay" class="hidden">
     <div class="sk-top">
       <span class="sk-title">✨ AI upscale</span>
@@ -297,6 +215,5 @@
 
   <script src="main.js"></script>
   <script type="module" src="viewer.js"></script>
-  <script type="module" src="skins.js"></script>
 </body>
 </html>

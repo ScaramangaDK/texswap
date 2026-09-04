@@ -66,7 +66,6 @@ function scanResult(inst) {
     missingFix: inst.swaps.missingFixConfig(),
     favTextures: inst.swaps.favTextures(),
     favSets: inst.swaps.favSets(),
-    skins: inst.skins.summary(),
     upscaleCache: (() => { try { const c = inst.upscale.cacheStats(); return { bytes: c.bytes, unusedBytes: c.unusedBytes, files: c.files }; } catch { return null; } })(),
     maps: inst.listMaps(),
   };
@@ -254,80 +253,6 @@ async function handleApi(req, url, res) {
           return json(res, 400, { error: e.message });
         }
       }
-      // ---- Skin studio (weapon models) ----
-      case '/api/skins/upload': {
-        if (!body.name || !body.filename || !body.dataB64) return json(res, 400, { error: 'need name, filename and dataB64' });
-        const buf = Buffer.from(body.dataB64, 'base64');
-        if (buf.length > 48 * 1024 * 1024) return json(res, 400, { error: 'file too large (max 48 MB)' });
-        const ext = path.extname(String(body.filename)).toLowerCase();
-        const label = String(body.label || path.basename(String(body.filename))).slice(0, 60);
-        try {
-          const r = ext === '.md2' || ext === '.md3'
-            ? inst.skins.setModel(body.name, buf, label)
-            : ['.png', '.jpg', '.jpeg', '.tga', '.pcx'].includes(ext)
-              ? inst.skins.setSkinImage(body.name, buf, ext === '.jpeg' ? '.jpg' : ext, label)
-              : null;
-          if (!r) return json(res, 400, { error: 'unsupported file type ' + ext + ' (png, jpg, tga, pcx, md2 or md3)' });
-          return json(res, 200, { ok: true, ...r, weapons: inst.skins.listWeapons() });
-        } catch (e) {
-          return json(res, 400, { error: e.message });
-        }
-      }
-      case '/api/skins/upscale': {
-        if (!body.name) return json(res, 400, { error: 'need name' });
-        try {
-          const r = await inst.skins.upscale(body.name, Number(body.scale) || 4, body.model === 'smooth' ? 'smooth' : 'detail');
-          return json(res, 200, { ok: true, ...r, weapons: inst.skins.listWeapons() });
-        } catch (e) {
-          return json(res, 400, { error: e.message });
-        }
-      }
-      case '/api/skins/undo': {
-        try { return json(res, 200, { ok: true, ...inst.skins.undoSkin(body.name), weapons: inst.skins.listWeapons() }); }
-        catch (e) { return json(res, 400, { error: e.message }); }
-      }
-      case '/api/skins/reset': {
-        try { return json(res, 200, { ok: true, ...inst.skins.reset(body.name, body.what || 'all'), weapons: inst.skins.listWeapons() }); }
-        catch (e) { return json(res, 400, { error: e.message }); }
-      }
-      case '/api/skins/enabled': {
-        const r = inst.skins.setEnabled(body.enabled);
-        return json(res, 200, { ok: true, ...r, skins: inst.skins.summary() });
-      }
-      case '/api/skins/export': {
-        try { return json(res, 200, { ok: true, ...inst.skins.exportSkin(body.name, body.title || '') }); }
-        catch (e) { return json(res, 400, { error: e.message }); }
-      }
-      case '/api/skins/template': {
-        // UV template as a file next to the exports, for painting in any editor
-        try {
-          const png = inst.skins.imagePng(body.name, { which: body.which === 'stock' ? 'stock' : 'current', uv: true, maxDim: 4096 });
-          if (!png) return json(res, 400, { error: 'no skin image for ' + body.name });
-          const dir = path.join(inst.writeDir, 'texswap', 'exports');
-          fs.mkdirSync(dir, { recursive: true });
-          const file = path.join(dir, `${body.name}-uv-template.png`);
-          fs.writeFileSync(file, png);
-          return json(res, 200, { ok: true, file });
-        } catch (e) {
-          return json(res, 400, { error: e.message });
-        }
-      }
-      case '/api/library/apply': {
-        try { return json(res, 200, { ok: true, ...inst.library.apply(body.id), weapons: inst.skins.listWeapons() }); }
-        catch (e) { return json(res, 400, { error: e.message }); }
-      }
-      case '/api/library/save': {
-        try { return json(res, 200, { ok: true, ...inst.library.saveCurrent(body.name, body.title || '', body.author || '') }); }
-        catch (e) { return json(res, 400, { error: e.message }); }
-      }
-      case '/api/library/delete': {
-        try { return json(res, 200, { ok: true, ...inst.library.delete(body.id) }); }
-        catch (e) { return json(res, 400, { error: e.message }); }
-      }
-      case '/api/library/refresh': {
-        inst.library.refresh();
-        return json(res, 200, { ok: true });
-      }
       // ---- AI upscale of a map's textures ----
       case '/api/upscale/map': {
         if (!body.map) return json(res, 400, { error: 'need map' });
@@ -362,11 +287,7 @@ async function handleApi(req, url, res) {
         return json(res, 200, { ok: true, tool: upscalerStatus() });
       }
       case '/api/import': {
-        if (body.data && body.data.kind === 'skin') {
-          // friends' skins join the collection and become the active skin
-          try { return json(res, 200, { ok: true, kind: 'skin', ...inst.library.importSkin(body.data, true) }); }
-          catch (e) { return json(res, 400, { error: e.message }); }
-        }
+        if (body.data && body.data.kind === 'skin') return json(res, 400, { error: 'weapon skin files (.aq2skin.json) are not supported in this version' });
         const result = body.data && body.data.kind === 'pack'
           ? inst.swaps.importPack(body.data)
           : inst.swaps.importMap(body.data);
@@ -444,49 +365,6 @@ async function handleApi(req, url, res) {
       if (!atlasPng) { res.writeHead(404); return res.end(); }
       res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'max-age=300' });
       return res.end(atlasPng);
-    }
-
-    case '/api/skins': {
-      const inst = getInstall(dir);
-      return json(res, 200, { ...inst.skins.summary(), weapons: inst.skins.listWeapons(), tool: upscalerStatus() });
-    }
-
-    case '/api/skins/model': {
-      const name = q.get('name');
-      if (!name) return json(res, 400, { error: 'missing ?name=' });
-      try { return json(res, 200, getInstall(dir).skins.clientModel(name)); }
-      catch (e) { return json(res, 400, { error: e.message }); }
-    }
-
-    case '/api/skins/image': {
-      const name = q.get('name');
-      if (!name) return json(res, 400, { error: 'missing ?name=' });
-      let png = null;
-      try {
-        png = getInstall(dir).skins.imagePng(name, {
-          which: q.get('which') === 'stock' ? 'stock' : 'current',
-          uv: q.get('uv') === '1',
-          maxDim: Math.min(4096, Number(q.get('size')) || 2048),
-        });
-      } catch (e) {
-        return json(res, 400, { error: e.message });
-      }
-      if (!png) { res.writeHead(404); return res.end(); }
-      // the URL carries a version stamp from the client; never trust a stale copy
-      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'max-age=30' });
-      return res.end(png);
-    }
-
-    case '/api/library': {
-      const inst = getInstall(dir);
-      return json(res, 200, { entries: inst.library.list(q.get('weapon') || null) });
-    }
-
-    case '/api/library/thumb': {
-      const png = getInstall(dir).library.thumbPng(q.get('id') || '', Math.min(1024, Number(q.get('size')) || 256));
-      if (!png) { res.writeHead(404); return res.end(); }
-      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'max-age=600' });
-      return res.end(png);
     }
 
     case '/api/upscale/plan': {

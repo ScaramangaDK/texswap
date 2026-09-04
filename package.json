@@ -22,7 +22,6 @@
       "devserver.js",
       "core/**",
       "ui/**",
-      "library/**",
       "!ui/logo.png",
       "!ui/logo2.png",
       "!ui/logo2-ui.png",

@@ -303,17 +303,6 @@ function renderHook() {
     toast(`AI upscale cache is ${(uc.bytes / 1073741824).toFixed(1)} GB${uc.unusedBytes ? ` (${(uc.unusedBytes / 1048576).toFixed(0)} MB unused)` : ''} - open ✨ AI upscale… on any map to clear unused files`, true);
   }
 
-  const skins = document.createElement('button');
-  const skOn = state.scan.skins && state.scan.skins.enabled && state.scan.skins.active > 0;
-  skins.innerHTML = skOn ? '🔫 Weapon skins<span class="dot"></span>' : '🔫 Weapon skins';
-  skins.title = skOn
-    ? `Skin studio - ${state.scan.skins.active} custom weapon${state.scan.skins.active === 1 ? '' : 's'} active in game`
-    : 'Skin studio - reskin or replace the weapon models you see in your hands';
-  skins.addEventListener('click', () => {
-    if (window.AQSkins) window.AQSkins.open();
-    else toast('Skin studio failed to load', true);
-  });
-  area.appendChild(skins);
 
   const miss = document.createElement('button');
   const mfOn = state.scan.missingFix && state.scan.missingFix.enabled;
@@ -431,11 +420,7 @@ async function importPresetFile(file) {
   try {
     const r = await apiPost('/api/import', { data });
     for (const w of (r.warnings || []).slice(0, 6)) toast(w, true);
-    if (r.kind === 'skin') {
-      toast(`Imported weapon skin: ${r.label} - restart the map in game to see it`);
-      if (window.AQSkins) window.AQSkins.refresh();
-      if (state.scan) rescan(false);
-    } else if (r.pack) {
+    if (r.pack) {
       toast(`Imported team pack: texture swaps for ${r.count} map${r.count === 1 ? '' : 's'}`);
       if (state.detail && r.maps && r.maps.includes(state.detail.name)) {
         await selectMap(state.detail.name);
@@ -2333,7 +2318,7 @@ function upRenderSide() {
   if (plan.tooBig.length) skipped.push(`${plan.tooBig.length} over the size limit`);
   if (plan.noGrid.length) skipped.push(`<span title="${plan.noGrid.join(', ')}">${plan.noGrid.length} without a .wal (the engine would tile them denser)</span>`);
   if (skipped.length) notes.push('Left alone: ' + skipped.join(' · ') + '.');
-  if (!tool.installed) notes.push(`<span class="warn">The AI upscaler is not installed yet - open the Skin studio's AI upscale once to download it (${tool.downloadMB} MB).</span>`);
+  if (!tool.installed) notes.push(`<span class="warn">The AI upscaler is not installed yet - open ✨ AI upscale… on a map once to download it (${tool.downloadMB} MB).</span>`);
   if (busyElsewhere) notes.push(`<span class="warn">Busy upscaling ${status.map} - wait for it to finish.</span>`);
   $('upNotes').innerHTML = notes.map(n => `<div>${n}</div>`).join('');
 
@@ -2430,7 +2415,7 @@ async function upscaleOne(t) {
   const grain = [25, 50, 75, 100].includes(Number(localStorage.getItem('aq2ts.upGrain'))) ? Number(localStorage.getItem('aq2ts.upGrain')) : 0;
   try {
     const st = await apiGet('/api/upscale/status');
-    if (!st.tool.installed) { toast('The AI upscaler is not installed yet - open ✨ AI upscale… on the map (or the Skin studio) to download it', true); return; }
+    if (!st.tool.installed) { toast('The AI upscaler is not installed yet - open ✨ AI upscale… on the map to download it', true); return; }
     if (st.running) { toast(`Busy upscaling ${st.map} - try again when it finishes`, true); return; }
     if (t.swap && t.swap.type === 'upscale') await apiPost('/api/swap', { map, from: t.name, spec: null });
     const r = await apiPost('/api/upscale/map', { map, factor, minSkip: 100000, src, model, grain, names: [t.name] });
@@ -2464,17 +2449,6 @@ window.AQTS = {
     const t = state.detail && state.detail.textures.find(x => x.name === name);
     if (t) openPicker(t);
     else toast('Texture not found on this map: ' + name, true);
-  },
-  // for the skin studio module
-  apiGet,
-  apiPost,
-  openModal,
-  closeModal,
-  exportDone: exportDoneModal,
-  skinsChanged: summary => {
-    if (!state.scan) return;
-    state.scan.skins = summary;
-    renderHook();
   },
 };
 

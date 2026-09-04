@@ -11,8 +11,6 @@ import { flatImage, notextureImage } from './gen.js';
 import { makeThumbPng, resolveImage, sizeOf, TEXTURE_EXTS, TEXTURE_EXTS_LOW } from './thumbs.js';
 import { imageSize } from './decoders.js';
 import { SwapStore, appDataRoot } from './swaps.js';
-import { SkinStore } from './skins.js';
-import { LibraryStore } from './library.js';
 import { TextureUpscaler } from './upscale.js';
 
 const SURF_SKY = 4;
@@ -141,8 +139,9 @@ export class Install {
     this.texCatalog = null;
     this.skyCatalog = null;
     this.swaps = new SwapStore(this);
-    this.skins = new SkinStore(this);
-    this.library = new LibraryStore(this);
+    // the weapon Skin studio was taken out of this build (2026-09-04; it returns in a
+    // later update): drop its game-side files once and restate the cfgs without its links
+    this.#dropLegacySkins();
     this.upscale = new TextureUpscaler(this);
     if (this.swaps.pendingHeal) {
       this.swaps.pendingHeal = false;
@@ -189,6 +188,15 @@ export class Install {
     this.dimsDisk = mine.dims || {};
     this.scanDirty = 0;
     return this.scanCache;
+  }
+
+  #dropLegacySkins() {
+    const skinsDir = path.join(this.swaps.dir, 'skins');
+    if (!fs.existsSync(skinsDir)) return;
+    try {
+      fs.rmSync(skinsDir, { recursive: true, force: true });
+      this.swaps.materialize();
+    } catch { /* the next swap action rewrites the cfgs anyway */ }
   }
 
   #saveScanCache() {
@@ -277,13 +285,6 @@ export class Install {
     this.scanProgress = null;
     this.#saveScanCache();
     this.#warmSkiesSoon();
-    // weapon skins live as inline link lines in every map cfg + hook.cfg; an
-    // older TexSwap build rewriting those files would drop them, so restate
-    // them once per start (only files whose content changed are written)
-    if (!this.skinsHealed && this.skins && this.skins.active()) {
-      this.skinsHealed = true;
-      try { this.skins.materialize(); } catch { /* next skin action redoes it */ }
-    }
     return maps;
   }
 
