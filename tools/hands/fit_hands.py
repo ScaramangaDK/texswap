@@ -1,14 +1,14 @@
 """Fit new arm meshes (MakeHuman, CC0) onto an AQ2 view model's old arm animation.
 
     blender -b -P tools/hands/fit_hands.py -- v_m4.md2 skin.png arms_uv.blend arms_joints.json out.md3 out_skin.png
-            --band arm_band.png --bandgain 0.35 --scale 1.25 --curl_l 0.6
-            --palmdir_l 0,-0.15,1 --palmdir_r 0,1,0 --hand_r 22.5,-26,-23 [--render dir]
+            --band arm_band.png --bandgain 0.35 --scale 1.25 --curl_l 0.7 --thumb_l along
+            --palmdir_l 0,-0.15,1 --hand_l 62,-20,-14.5 --palmdir_r 0,1,0 --hand_r 22.5,-26,-20.5 [--gunmove 0,3,6] [--render dir]
 
-The M4 settings above are the shipped ones. Per weapon you set: --palmdir_<side>
-(direction the palm faces, gun space: x forward, y left, z up), --hand_<side>
-(palm-centre position; without it the palm slides along its normal until it
-touches the gun), --curl_<side> (0..1), --scale (hand size), --shift/--move
-for small corrections. tools/hands/README.md explains how to read the numbers.
+The M4 settings above are the shipped ones (v3). Per weapon you set: --palmdir_<side>
+(direction the palm faces, gun space: x forward, y left, z up), --hand_<side> (palm-centre
+position; without it the palm slides along its normal until it touches the gun),
+--curl_<side> (0..1), --thumb_<side> along|curl, --scale (hand size), --gunmove (shift the
+whole model), --shift/--move for small corrections. See tools/hands/README.md.
                              [--scale k] [--render dir]
 
 Old arm/hand triangles are found by their skin UV strips, then grouped into the
@@ -34,6 +34,8 @@ SCALE = opt('--scale', 1.0)
 CURL = opt('--curl', 1.0)          # 1 = full grip, 0 = open hand
 CURLS = {'l': opt('--curl_l', CURL), 'r': opt('--curl_r', CURL)}
 GAP = opt('--gap', 1.2)
+THUMB = {k: (argv[argv.index('--thumb_' + k) + 1] if '--thumb_' + k in argv else 'curl') for k in ('l', 'r')}   # 'along' = thumb laid parallel to the index finger (resting along the barrel)
+GUNMOVE = np.array([float(x) for x in argv[argv.index('--gunmove') + 1].split(',')]) if '--gunmove' in argv else np.zeros(3)   # shift the whole model (gun + hands) in every frame
 HAND = {k: (np.array([float(x) for x in argv[argv.index('--hand_' + k) + 1].split(',')]) if '--hand_' + k in argv else None) for k in ('l', 'r')}   # put the palm centre HERE (gun space) instead of the contact push            # palm-to-gun distance after the contact push (gun units)
 PALMDIR = {k: (np.array([float(x) for x in argv[argv.index('--palmdir_' + k) + 1].split(',')]) if '--palmdir_' + k in argv else None) for k in ('l', 'r')}   # force the palm-facing direction (gun space)
 PALM = opt('--palm', 1.0)
@@ -143,6 +145,13 @@ for side in ('l', 'r'):
     new_arms[side] = dict(V=V, src=np.array(src), uvs=uvs, tris=tris,
                           wrist=np.array(j['wrist']), elbow=np.array(j['elbow']), cut=np.array(j['cut']), tip=np.array(j['tip']))
 
+def rot_between(a, b):
+    a, b = a / np.linalg.norm(a), b / np.linalg.norm(b)
+    v = np.cross(a, b); s_ = np.linalg.norm(v); c = float(np.dot(a, b))
+    if s_ < 1e-9: return np.eye(3) if c > 0 else -np.eye(3)
+    vx = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+    return np.eye(3) + vx + vx @ vx * ((1 - c) / (s_ * s_))
+
 # ---- finger posing (rest space): curl each finger about its joints toward the palm ----
 def rot_axis(axis, ang):
     axis = axis / np.linalg.norm(axis)
@@ -159,7 +168,7 @@ GRIP = {
     'l': {1: (40, 30, 15), 2: (55, 70, 35), 3: (60, 80, 40), 4: (65, 85, 45), 5: (70, 90, 50)},   # support hand wraps the handguard
 }
 
-def curl_fingers(V, j, curl, palm_sign, grip):
+def curl_fingers(V, j, curl, palm_sign, grip, thumb='curl'):
     V = V.copy()
     wrist = np.array(j['wrist'])
     chains = {fi: np.array(j['fingers'][str(fi)], dtype=np.float64) for fi in range(1, 6)}
@@ -176,6 +185,12 @@ def curl_fingers(V, j, curl, palm_sign, grip):
         ch = chains[fi].copy()
         mine = cand[owner == fi]
         fdir = ch[3] - ch[0]; fdir /= np.linalg.norm(fdir)
+        if fi == 1 and thumb == 'along':
+            # lay the thumb parallel to the index finger: one rotation about the thumb base, no curl
+            idx_dir = chains[2][3] - chains[2][0]; idx_dir /= np.linalg.norm(idx_dir)
+            R = rot_between(fdir, idx_dir)
+            V[mine] = (V[mine] - ch[0]) @ R.T + ch[0]
+            continue
         axis = np.cross(fdir, normal)      # tips move toward +normal (the palm side)
         for k in range(3):
             ang = math.radians(grip[fi][k] * curl)
@@ -191,7 +206,7 @@ def curl_fingers(V, j, curl, palm_sign, grip):
 for side in ('l', 'r'):
     na = new_arms[side]
     na['V_rest'] = na['V']
-    na['V'] = curl_fingers(na['V'], joints[side], CURLS[side], PALM, GRIP[side])
+    na['V'] = curl_fingers(na['V'], joints[side], CURLS[side], PALM, GRIP[side], THUMB[side])
     _j = joints[side]; _kn = np.array([_j['fingers'][str(fi)][0] for fi in range(2, 6)]); _pts = np.vstack([_kn, np.array(_j['wrist'])[None]])
     _n = np.linalg.svd(_pts - _pts.mean(axis=0))[2][2]
     _mv = np.linalg.norm(na['V'] - na['V_rest'], axis=1) > 1e-6
@@ -301,7 +316,7 @@ for oa in old_arms:
     if SHIFT[side]:
         b = b - SHIFT[side] * pn
     b = b + MOVE[side]
-    Vfit = (A @ na['V'].T).T + b
+    Vfit = (A @ na['V'].T).T + b + GUNMOVE
     _h = Vfit[na['hand_mask']]; _pc = (A @ pts.T).T.mean(axis=0) + b; _kn = (A @ kn.T).T + b
     print('%s hand @REF: bbox %s..%s  palm centre %s  knuckles x %.1f..%.1f  tip %s  wrist %s' % (side, np.round(_h.min(axis=0), 1), np.round(_h.max(axis=0), 1), np.round(_pc, 1), _kn[:, 0].min(), _kn[:, 0].max(), np.round(A @ na['tip'] + b, 1), np.round(A @ na['wrist'] + b, 1)))
     print('%s arm: old len %.1f, start scale %.1f, icp scale %.2f, axis %+d roll %d, cost %.2f' % (side, old_len, base_scale, s, sign, roll, cost))
@@ -338,7 +353,7 @@ all_tris, all_uvs = list(g_tris), list(g_uvs)
 frame_verts = [[] for _ in range(nframes)]
 frame_norms = [[] for _ in range(nframes)]
 for f in range(nframes):
-    gv = frames_np[f][g_src]
+    gv = frames_np[f][g_src] + GUNMOVE
     frame_verts[f].extend(map(tuple, gv)); frame_norms[f].extend(map(tuple, smooth_normals(g_tris, gv)))
 for side in ('l', 'r'):
     na, fr = fitted[side]['arm'], fitted[side]['frames']

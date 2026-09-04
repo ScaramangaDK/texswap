@@ -12,7 +12,7 @@ feature. Blender 4.5 LTS portable, headless:
     # 2. once: repack the arm UVs into two square halves and bake a skin texture
     $B -b -P tools/hands/bake_arms.py -- arms.blend arms_uv.blend arm_band.png 1280 640
     # 3. per weapon: fit onto the MD2's arm animation, write MD3 + skin
-    $B -b -P tools/hands/fit_hands.py -- v_m4/tris.md2 v_m4/skin.png arms_uv.blend arms_joints.json          out.md3 out_skin.png --band arm_band.png --bandgain 0.35 --scale 1.25 --curl_l 0.6          --palmdir_l 0,-0.15,1 --palmdir_r 0,1,0 --hand_r 22.5,-26,-23
+    $B -b -P tools/hands/fit_hands.py -- v_m4/tris.md2 v_m4/skin.png arms_uv.blend arms_joints.json          out.md3 out_skin.png --band arm_band.png --bandgain 0.35 --scale 1.25 --curl_l 0.6          --palmdir_l 0,-0.15,1 --hand_l 62,-20,-14.5 --thumb_l along --palmdir_r 0,1,0 --hand_r 22.5,-26,-20.5
     # check the pose without the game: exact wireframe plots + workbench renders of the MD3
     $B -b -P tools/hands/render_md3.py -- out.md3 view.png 30 50,-75,-45 22,-24,-22 35   # cam x,y,z  aim x,y,z  fov
 
@@ -32,6 +32,10 @@ or through the API (`/api/skins/upload` with `dir` = the install).
   palm slides along its normal into contact with the gun (`--gap`) or is put at
   `--hand_<side>`. Every animation frame reuses the old arm's per-frame rigid
   motion (Kabsch of the old arm verts REF -> frame).
+* `--thumb_<side> along` lays the thumb parallel to the index finger (resting
+  along the barrel); `--gunmove x,y,z` shifts gun + hands in every frame (the M4
+  sits so low/right that a correct grip hand is below the screen edge; 0,3,6
+  brings it into view at the cost of a slightly different gun position).
 * Finding the numbers: the script prints each hand's bbox / palm centre /
   knuckles at the reference frame; `render_md3.py` renders the MD3, and a
   wireframe x-z / x-y plot with a unit grid (see the session notes) shows where
