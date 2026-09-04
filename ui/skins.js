@@ -186,6 +186,7 @@ function renderSide() {
   `;
   $('skUndo').classList.toggle('hidden', !w.canUndo);
   $('skResetSkin').classList.toggle('hidden', !w.skin);
+  $('skResetSkin').textContent = w.model ? 'Back to install skin (wrong for this model)' : 'Back to stock skin';
   $('skResetModel').classList.toggle('hidden', !w.model);
   $('skExport').disabled = !(w.skin || w.model);
   $('skColSave').disabled = !(w.skin || w.model);
@@ -855,7 +856,16 @@ function bindUi() {
   $('rsReset').addEventListener('click', () => { S.rs = { ...DEFAULT_PARAMS, protect: [] }; buildRestyleControls(); scheduleRestyle(true); });
   bindProtect();
   $('skUndo').addEventListener('click', () => simplePost('/api/skins/undo', {}, 'Previous skin restored'));
-  $('skResetSkin').addEventListener('click', () => simplePost('/api/skins/reset', { what: 'skin' }, 'Back to the stock skin'));
+  $('skResetSkin').addEventListener('click', () => {
+    const w = current();
+    // with a replacement model the install's "stock" skin belongs to the
+    // ORIGINAL model - it will look wrong on this one (and an AI upscale of
+    // it would only sharpen the wrong picture)
+    if (w && w.model && !confirm(`${w.label} uses a replacement model (${w.model.label || 'custom'}). The install's stock skin was drawn for the original model and will look wrong on it.
+
+Remove the custom skin anyway?`)) return;
+    simplePost('/api/skins/reset', { what: 'skin' }, 'Back to the stock skin');
+  });
   $('skResetModel').addEventListener('click', () => simplePost('/api/skins/reset', { what: 'model' }, 'Back to the stock model - restart the map in game', true));
   $('skColSave').addEventListener('click', openSaveToCollection);
   $('skTemplate').addEventListener('click', async () => {
