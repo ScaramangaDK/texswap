@@ -11,6 +11,8 @@ const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const SRC = path.join(ROOT, 'dist', 'win-unpacked');
 const OUT = path.join(ROOT, 'dist', 'TexSwap-win64.zip');
 const PREFIX = 'TexSwap/';
+// --nozip: dev build - only refresh the run folder, no archive (zips are for releases)
+const NOZIP = process.argv.includes('--nozip');
 
 const crc32 = buf => zlib.crc32(buf) >>> 0;
 
@@ -34,6 +36,7 @@ if (!fs.existsSync(path.join(SRC, 'TexSwap.exe'))) {
   console.error('dist/win-unpacked/TexSwap.exe not found - run electron-builder first');
   process.exit(1);
 }
+if (!NOZIP) {
 if (fs.existsSync(OUT)) fs.unlinkSync(OUT);
 const fd = fs.openSync(OUT, 'w');
 let offset = 0;
@@ -98,6 +101,9 @@ eocd.writeUInt32LE(cdStart, 16);
 fs.writeSync(fd, eocd);
 fs.closeSync(fd);
 console.log(`dist/TexSwap-win64.zip: ${files} files, ${(fs.statSync(OUT).size / 1024 / 1024).toFixed(0)} MB`);
+} else {
+console.log('dev build: zip skipped (--nozip)');
+}
 
 // Mirror the fresh build into the extracted run folder (if one exists), so
 // the local test install updates in place without re-extracting the zip.

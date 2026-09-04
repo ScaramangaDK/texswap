@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "node devserver.js",
     "app": "electron .",
+    "build": "electron-builder --win dir && node tools/makezip.mjs --nozip",
     "dist": "electron-builder --win dir && node tools/makezip.mjs"
   },
   "build": {
