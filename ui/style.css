@@ -1437,7 +1437,9 @@ footer .credit b { color: var(--accent-hi); font-weight: 600; }
   overflow-y: auto;
   padding: 14px 16px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--up-tile), 1fr));
+  grid-template-columns: repeat(auto-fill, var(--up-tile));
+  grid-auto-rows: max-content;   /* auto rows collapse to 6px for overflow:hidden items in Chromium */
+  justify-content: start;
   gap: 12px;
   align-content: start;
 }
@@ -1454,8 +1456,8 @@ footer .credit b { color: var(--accent-hi); font-weight: 600; }
 .up-card:hover { border-color: var(--accent-hi); transform: translateY(-1px); }
 .up-card.sel { opacity: 1; border-color: var(--accent); box-shadow: var(--glow-soft); }
 .up-card.done { border-style: dashed; }
-.up-card .up-imgbox { aspect-ratio: 1 / 1; display: flex; align-items: center; justify-content: center; background: var(--checker); overflow: hidden; }
-.up-card img { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; }
+.up-card .up-imgbox { height: calc(var(--up-tile) - 2px); display: flex; align-items: center; justify-content: center; background: var(--checker); overflow: hidden; }   /* square: columns are fixed at --up-tile (aspect-ratio/padding tricks collapsed the grid rows in Chromium) */
+.up-card img { display: block; width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
 .up-card .up-name { padding: 6px 8px 0; font: 11.5px/1.2 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .up-card .up-meta { padding: 2px 8px 7px; font-size: 11px; color: var(--faint); }
 .up-card .up-badge {
