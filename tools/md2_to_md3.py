@@ -49,12 +49,13 @@ def encode_normal(n):
     x, y, z = n
     l = math.sqrt(x*x + y*y + z*z) or 1.0
     x, y, z = x/l, y/l, z/l
-    lng = math.atan2(y, x)
-    lat = math.acos(max(-1.0, min(1.0, z)))
-    # q3 convention: lat in high byte, lng in low byte, both 0..255 for 0..2pi
-    lat_b = int(round(lat * 255 / (2*math.pi))) & 255
-    lng_b = int(round(lng * 255 / (2*math.pi))) & 255
-    return (lat_b << 8) | lng_b
+    # Quake 3 byte order, which q2pro decodes too (checked in game 2026-09-04;
+    # the other order lights models inside-out):
+    #   high byte = azimuth atan2(y, x), low byte = zenith acos(z), 255 = 2*pi
+    #   x = cos(hi) * sin(lo), y = sin(hi) * sin(lo), z = cos(lo)
+    hi = int(round(math.atan2(y, x) * 255 / (2*math.pi))) & 255
+    lo = int(round(math.acos(max(-1.0, min(1.0, z))) * 255 / (2*math.pi))) & 255
+    return (hi << 8) | lo
 
 MAX_TRIS_PER_SURFACE = 4000   # q2pro 2023 builds: 4096 tris / 4096 verts per mesh (newer: 6144)
 
@@ -243,4 +244,5 @@ def main():
     print('MD3 written: %s  frames=%d verts=%d tris=%d surfaces=%d subdiv=%d smooth=%s skin=%s' % (
         dst, len(frame_names), len(md3_uvs), len(md3_tris), n, subdiv, smooth, skin))
 
-main()
+if __name__ == '__main__':
+    main()

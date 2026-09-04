@@ -3,3 +3,4 @@ dist/
 *.log
 releases/
 trailer/
+__pycache__/

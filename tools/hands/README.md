@@ -1,0 +1,43 @@
+# Real hands for AQ2 view weapons (Blender pipeline)
+
+Replaces the blocky MD2 hands of a view weapon with MakeHuman forearms + hands
+(CC0 base mesh from the MPFB extension), fitted frame by frame onto the
+original hand animation, and writes an MD3 + 2-band skin the Skin studio can
+upload (`link tris.md2 -> tris.md3` in game). Ralle's own project, not an app
+feature. Blender 4.5 LTS portable, headless:
+
+    B=C:/AI/tools/blender-4.5.13-windows-x64/blender.exe
+    # 1. once: MPFB human -> forearm+hand meshes (arm_l / arm_r) + joint positions
+    $B -b -P tools/hands/extract_arms.py -- human.blend arms.blend arms_joints.json
+    # 2. once: repack the arm UVs into two square halves and bake a skin texture
+    $B -b -P tools/hands/bake_arms.py -- arms.blend arms_uv.blend arm_band.png 1280 640
+    # 3. per weapon: fit onto the MD2's arm animation, write MD3 + skin
+    $B -b -P tools/hands/fit_hands.py -- v_m4/tris.md2 v_m4/skin.png arms_uv.blend arms_joints.json          out.md3 out_skin.png --band arm_band.png --bandgain 0.35 --shift_r -3
+
+Then upload out.md3 and out_skin.png in the Skin studio (model first, then skin),
+or through the API (`/api/skins/upload` with `dir` = the install).
+
+## How fit_hands.py works
+* Old arm triangles are found by their skin-UV strips (`REGIONS`), clustered
+  into two arms (single-linkage on shared vertices), reference frame `REF=30`
+  (frame 0 is a draw pose).
+* New arms: fingers curled toward the palm (`GRIP` angles per joint), then a
+  rigid ICP (Kabsch, size fixed from the old arm length, hand-weighted samples)
+  started from 2 axis signs x 8 rolls picks the pose; every animation frame
+  reuses the old arm's per-frame rigid motion.
+* MD3: gun surface keeps its UVs squeezed into the top band, arms map into the
+  lower band; surfaces split at 4000 tris (see md2_to_md3.py).
+
+## Engine facts learned the hard way (2026-09-04)
+* MD3 normals use the Quake 3 byte order: high byte = azimuth atan2(y,x), low
+  byte = zenith acos(z). The other order lights the model inside-out (white or
+  black arms depending on the light).
+* Blender UV v runs bottom-up, MD3 v top-down: flip before writing (`1 - v`).
+* q2pro lights view models about 2.5x: a tan skin (200,150,118) turns white.
+  Stock hand skins are stored around (75,45,30) - hence `--bandgain 0.35`.
+* Cycles bake: `COMBINED` with direct/indirect off bakes black; use `DIFFUSE`
+  with DIRECT+INDIRECT+COLOR under a uniform world light (= albedo + soft AO).
+* Blender's `open_mainfile` drops every image handle - reload after it.
+* The exe's API acts on the app's LAST-USED install unless `dir` is passed.
+
+Assets (blends, joints, band, finished M4) live in `C:\AI\AIprojectsq2models\hands\`.
