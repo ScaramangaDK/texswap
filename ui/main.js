@@ -2173,10 +2173,252 @@ $('gameBtn').addEventListener('click', async () => {
   }
 });
 
-// ---------- AI upscale of a map's textures ----------
+// ---------- AI upscale: full-screen view ----------
 let upscalePoll = 0;
+const UP = { open: false, map: null, plan: null, status: null, cache: null, selected: null, eligible: [], done: [], bound: false, dirty: false };
 
-// One texture, straight from its card: same job machinery, one name.
+function upOpts() {
+  return {
+    factor: Number($('upFactor').value) || 4,
+    minSkip: Number($('upSkip').value) || 1024,
+    src: $('upSrc').value === 'auto' ? 'auto' : 'low',
+    model: $('upModel').value === 'smooth' ? 'smooth' : 'detail',
+  };
+}
+
+function upIsSel(name) {
+  // default: everything not yet done; done textures are opt-in (redo)
+  return UP.selected ? UP.selected.has(name) : !UP.done.some(d => d.name === name);
+}
+
+function upBind() {
+  if (UP.bound) return;
+  UP.bound = true;
+  $('upClose').addEventListener('click', closeUpscale);
+  for (const [id, key] of [['upFactor', 'aq2ts.upFactor'], ['upSkip', 'aq2ts.upSkip'], ['upSrc', 'aq2ts.upSrc'], ['upModel', 'aq2ts.upModel']]) {
+    $(id).addEventListener('change', () => { localStorage.setItem(key, $(id).value); UP.selected = null; upRefresh(); });
+  }
+  $('upAll').addEventListener('click', () => { UP.selected = new Set([...UP.eligible, ...UP.done].map(e => e.name)); upRenderGrid(); upRenderSide(); });
+  $('upNone').addEventListener('click', () => { UP.selected = new Set(); upRenderGrid(); upRenderSide(); });
+  $('upFilter').addEventListener('input', upRenderGrid);
+  $('upStart').addEventListener('click', async () => {
+    const names = [...UP.eligible, ...UP.done].map(e => e.name).filter(upIsSel);
+    if (!names.length) return;
+    $('upStart').disabled = true;
+    try {
+      await apiPost('/api/upscale/map', { map: UP.map, ...upOpts(), names });
+      UP.dirty = true;
+      upRefresh();
+    } catch (e) { toast('Upscale: ' + e.message, true); $('upStart').disabled = false; }
+  });
+  $('upCancel').addEventListener('click', () => apiPost('/api/upscale/cancel', {}).catch(() => {}));
+  $('upRemove').addEventListener('click', async () => {
+    try {
+      const r = await apiPost('/api/upscale/remove', { map: UP.map });
+      applyMutation(r);
+      UP.selected = null;
+      toast(`Removed ${r.removed} upscale${r.removed === 1 ? '' : 's'} on ${UP.map}`);
+      upRefresh();
+    } catch (e) { toast(e.message, true); }
+  });
+  $('upClearCache').addEventListener('click', async () => {
+    $('upClearCache').disabled = true;
+    try {
+      const r = await apiPost('/api/upscale/clearcache', {});
+      toast(`Removed ${r.removed} unused cache file${r.removed === 1 ? '' : 's'} (${(r.removedBytes / 1048576).toFixed(0)} MB)`);
+      upRefresh();
+    } catch (e) { toast(e.message, true); }
+    $('upClearCache').disabled = false;
+  });
+  document.addEventListener('keydown', e => {
+    if (!UP.open || e.key !== 'Escape') return;
+    if (!$('modalOverlay').classList.contains('hidden')) return;
+    closeUpscale();
+  });
+}
+
+async function openUpscaleMap() {
+  if (!state.detail) return;
+  upBind();
+  UP.map = state.detail.name;
+  UP.open = true;
+  UP.selected = null;
+  UP.dirty = false;
+  $('upFactor').value = String(Number(localStorage.getItem('aq2ts.upFactor')) || 4);
+  $('upSkip').value = String(Number(localStorage.getItem('aq2ts.upSkip')) || 1024);
+  $('upSrc').value = localStorage.getItem('aq2ts.upSrc') === 'auto' ? 'auto' : 'low';
+  $('upModel').value = localStorage.getItem('aq2ts.upModel') === 'smooth' ? 'smooth' : 'detail';
+  $('upMapName').textContent = UP.map;
+  $('upFilter').value = '';
+  $('upGrid').textContent = '';
+  $('upStatus').textContent = 'loading…';
+  $('upscaleOverlay').classList.remove('hidden');
+  await upRefresh();
+}
+
+async function closeUpscale() {
+  UP.open = false;
+  clearTimeout(upscalePoll);
+  $('upscaleOverlay').classList.add('hidden');
+  if (UP.dirty && state.activeMap === UP.map) await selectMap(UP.map);
+}
+
+async function upRefresh() {
+  if (!UP.open) return;
+  let plan, status, cache;
+  try {
+    [plan, status, cache] = await Promise.all([
+      apiGet('/api/upscale/plan', { name: UP.map, ...upOpts() }),
+      apiGet('/api/upscale/status'),
+      apiGet('/api/upscale/cache').catch(() => null),
+    ]);
+  } catch (e) { toast('Upscale: ' + e.message, true); return; }
+  if (!UP.open) return;
+  UP.plan = plan; UP.status = status; UP.cache = cache;
+  UP.eligible = plan.eligible;
+  UP.done = plan.already;
+  if (UP.selected) {
+    const all = new Set([...UP.eligible, ...UP.done].map(e => e.name));
+    for (const n of [...UP.selected]) if (!all.has(n)) UP.selected.delete(n);
+  }
+  upRenderGrid();
+  upRenderSide();
+  const running = status.running && status.map === UP.map;
+  if (running) {
+    clearTimeout(upscalePoll);
+    upscalePoll = setTimeout(async () => {
+      if (!UP.open) return;
+      const st = await apiGet('/api/upscale/status').catch(() => null);
+      if (st && !st.running) {
+        for (const f of (st.failed || []).slice(0, 4)) toast(f, true);
+        toast(st.applied ? `AI upscale done: ${st.applied} textures on ${UP.map} - F9 in game (hi-res mode)` : 'AI upscale finished with nothing to apply', !st.applied);
+        UP.selected = new Set(); // a finished run leaves nothing ticked
+        upRefresh();
+      } else {
+        UP.status = st || UP.status;
+        upRenderSide();
+        upscalePoll = setTimeout(() => upRefresh(), 0);
+      }
+    }, 800);
+  }
+}
+
+function upRenderSide() {
+  const { plan, status, cache } = UP;
+  if (!plan) return;
+  const o = upOpts();
+  const tool = plan.tool;
+  const running = status.running && status.map === UP.map;
+  const busyElsewhere = status.running && status.map !== UP.map;
+  const all = [...UP.eligible, ...UP.done];
+  const selNames = all.map(e => e.name).filter(upIsSel);
+  const nSel = selNames.length;
+  const secs = Math.max(0, nSel - (UP.plan.cached || 0)) * 3;
+  const est = nSel ? (secs < 90 ? `about ${Math.max(5, Math.round(secs / 5) * 5)} s` : `about ${Math.round(secs / 60)} min`) : '';
+
+  $('upSelCount').textContent = nSel;
+  $('upSelText').textContent = `of ${all.length} texture${all.length === 1 ? '' : 's'} selected` + (est ? ` · ${est} on your GPU` : '');
+
+  const notes = [];
+  if (UP.done.length) notes.push(`${UP.done.length} already upscaled - tick any to redo them with the settings above.`);
+  if (plan.cached) notes.push(`${plan.cached} cached: instant.`);
+  const regen = UP.eligible.filter(e => e.regen).length;
+  if (regen) notes.push(`<span class="warn">${regen} of this map's preset ${regen === 1 ? 'has' : 'have'} no generated file on this PC (imported preset or cleared cache) - ticked, the run regenerates them with their own settings.</span>`);
+  const skipped = [];
+  if (plan.skipHiRes.length) skipped.push(`${plan.skipHiRes.length} already at ${o.minSkip >= 100000 ? 'hi-res' : o.minSkip + ' px or more'}`);
+  if (plan.skipSwapped.length) skipped.push(`${plan.skipSwapped.length} with other swaps`);
+  if (plan.skipMissing.length) skipped.push(`${plan.skipMissing.length} missing`);
+  if (plan.tooBig.length) skipped.push(`${plan.tooBig.length} over the size limit`);
+  if (plan.noGrid.length) skipped.push(`<span title="${plan.noGrid.join(', ')}">${plan.noGrid.length} without a .wal (the engine would tile them denser)</span>`);
+  if (skipped.length) notes.push('Left alone: ' + skipped.join(' · ') + '.');
+  if (!tool.installed) notes.push(`<span class="warn">The AI upscaler is not installed yet - open the Skin studio's AI upscale once to download it (${tool.downloadMB} MB).</span>`);
+  if (busyElsewhere) notes.push(`<span class="warn">Busy upscaling ${status.map} - wait for it to finish.</span>`);
+  $('upNotes').innerHTML = notes.map(n => `<div>${n}</div>`).join('');
+
+  $('upStart').classList.toggle('hidden', running);
+  $('upStart').disabled = !tool.installed || !nSel || busyElsewhere;
+  $('upStart').textContent = nSel ? `Upscale ${nSel} texture${nSel === 1 ? '' : 's'}` : 'Nothing selected';
+  $('upProgress').classList.toggle('hidden', !running);
+  if (running) {
+    const pct = status.total ? Math.round(status.done / status.total * 100) : 0;
+    $('upBar').style.width = pct + '%';
+    $('upProgText').textContent = `${status.done} / ${status.total}${status.current ? ' · ' + status.current : ''}`;
+  }
+  $('upLast').textContent = status.finished && status.map === UP.map
+    ? `Last run: ${status.applied} textures applied${status.failed.length ? `, ${status.failed.length} failed` : ''}${status.cancelled ? ' (cancelled)' : ''}.`
+    : '';
+  $('upRemove').disabled = !UP.done.length || running;
+  $('upRemove').textContent = UP.done.length ? `Remove ${UP.done.length} upscale${UP.done.length === 1 ? '' : 's'} on this map` : 'No upscales on this map';
+  if (cache) {
+    const big = cache.bytes > 1073741824;
+    $('upCache').innerHTML = `${big ? '<span class="warn">Getting big. </span>' : ''}${cache.files} file${cache.files === 1 ? '' : 's'}, ${(cache.bytes / 1048576).toFixed(0)} MB on this PC, shared by every map` +
+      (cache.unusedFiles ? ` · <b>${cache.unusedFiles}</b> unused (${(cache.unusedBytes / 1048576).toFixed(0)} MB)` : ' · nothing unused');
+    $('upClearCache').disabled = !cache.unusedFiles;
+  }
+  $('upStatus').textContent = running
+    ? `upscaling… ${status.done} / ${status.total}`
+    : `${UP.done.length} of ${all.length + plan.skipHiRes.length + plan.skipSwapped.length} textures upscaled on this map`;
+}
+
+function upRenderGrid() {
+  const grid = $('upGrid');
+  grid.textContent = '';
+  const o = upOpts();
+  const q = $('upFilter').value.trim().toLowerCase();
+  const running = UP.status && UP.status.running && UP.status.map === UP.map;
+  const items = [
+    ...UP.eligible.map(e => ({ ...e, isDone: false })),
+    ...UP.done.map(a => ({ ...a, isDone: true })),
+  ].filter(e => !q || e.name.includes(q));
+  items.sort((a, b) => a.name.localeCompare(b.name));
+  $('upGridInfo').textContent = items.length ? `${items.length} texture${items.length === 1 ? '' : 's'}${q ? ' matching' : ''} · click to tick` : '';
+  if (!items.length) {
+    const d = document.createElement('div');
+    d.className = 'up-empty';
+    d.textContent = q ? 'No texture matches the filter.' : 'Nothing to upscale with these settings - every texture is already hi-res, swapped, or has no .wal.';
+    grid.appendChild(d);
+    return;
+  }
+  for (const e of items) {
+    const card = document.createElement('div');
+    card.className = 'up-card' + (upIsSel(e.name) ? ' sel' : '') + (e.isDone ? ' done' : '');
+    card.dataset.name = e.name;
+    const img = document.createElement('img');
+    img.loading = 'lazy';
+    img.alt = '';
+    img.src = e.isDone
+      ? thumbUrl({ upscale: e.name, factor: e.factor, src: e.src, model: e.model, size: 256 })
+      : thumbUrl({ tex: e.name, size: 256, res: o.src === 'low' ? 'low' : 'hi' });
+    const badge = document.createElement('span');
+    badge.className = 'up-badge';
+    badge.textContent = e.isDone
+      ? `done · ${e.factor}x ${e.model}${e.src === 'low' ? ' · wal' : ''}`
+      : e.regen ? 'regenerate' : `${e.w}×${e.h} → ${e.factor}x`;
+    const tick = document.createElement('span');
+    tick.className = 'up-tick';
+    tick.textContent = upIsSel(e.name) ? '✓' : '';
+    const name = document.createElement('div');
+    name.className = 'up-name';
+    name.textContent = e.name;
+    name.title = e.name;
+    const meta = document.createElement('div');
+    meta.className = 'up-meta';
+    meta.textContent = e.isDone
+      ? 'tick to redo with the settings on the left'
+      : `${e.w}×${e.h} ${e.ext ? e.ext.slice(1) : ''} → ${e.w * e.factor}×${e.h * e.factor}`;
+    card.append(img, badge, tick, name, meta);
+    card.addEventListener('click', () => {
+      if (running) return;
+      if (!UP.selected) UP.selected = new Set(UP.eligible.map(x => x.name));
+      if (UP.selected.has(e.name)) UP.selected.delete(e.name); else UP.selected.add(e.name);
+      card.classList.toggle('sel', UP.selected.has(e.name));
+      tick.textContent = UP.selected.has(e.name) ? '✓' : '';
+      upRenderSide();
+    });
+    grid.appendChild(card);
+  }
+}
+
 async function upscaleOne(t) {
   if (!state.detail) return;
   const map = state.detail.name;
@@ -2208,165 +2450,6 @@ async function upscaleOne(t) {
     toast('Upscale: ' + e.message, true);
   }
 }
-async function openUpscaleMap() {
-  if (!state.detail) return;
-  const map = state.detail.name;
-  clearTimeout(upscalePoll);
-  let factor = Number(localStorage.getItem('aq2ts.upFactor')) || 4;
-  let minSkip = Number(localStorage.getItem('aq2ts.upSkip')) || 1024;
-  let src = localStorage.getItem('aq2ts.upSrc') === 'low' ? 'low' : 'auto';
-  let model = localStorage.getItem('aq2ts.upModel') === 'smooth' ? 'smooth' : 'detail';
-  // which eligible textures to do: everything by default, user unticks the
-  // ones that will not take an upscale well (signs, decals, tiny trims...)
-  let selected = null; // Set of names, null = "all eligible"
-  let lastEligible = [];
-
-  const render = async () => {
-    let plan, status, cache;
-    try {
-      [plan, status, cache] = await Promise.all([
-        apiGet('/api/upscale/plan', { name: map, factor, minSkip, src, model }),
-        apiGet('/api/upscale/status'),
-        apiGet('/api/upscale/cache').catch(() => null),
-      ]);
-    } catch (e) { toast('Upscale: ' + e.message, true); return; }
-    const tool = plan.tool;
-    const running = status.running && status.map === map;
-    const busyElsewhere = status.running && status.map !== map;
-    const pct = status.total ? Math.round(status.done / status.total * 100) : 0;
-    // done textures are listed too (unticked): ticking one redoes it with the
-    // settings above. "all" means all not-yet-done; done ones are opt-in.
-    const doneNames = plan.already.map(a => a.name);
-    lastEligible = plan.eligible.map(e => e.name).concat(doneNames);
-    if (selected) for (const n of [...selected]) if (!lastEligible.includes(n)) selected.delete(n);
-    const isSel = n => selected ? selected.has(n) : !doneNames.includes(n);
-    const nSel = lastEligible.filter(isSel).length;
-    const secs = Math.max(0, nSel - plan.cached) * 3;
-    const est = secs < 90 ? `about ${Math.max(10, Math.round(secs / 10) * 10)} seconds` : `about ${Math.round(secs / 60)} minutes`;
-    const body = running ? `
-      <p class="mnote">Upscaling <b>${status.done} / ${status.total}</b>${status.current ? ` · <span class="mono">${status.current}</span>` : ''}</p>
-      <div class="sk-bar"><div style="width:${pct}%"></div></div>
-      <p class="mnote">Each texture is cached, so the next map that uses it is instant. You can close this window - it keeps running.</p>`
-      : `
-      <p class="mnote">Real-ESRGAN redraws each texture at a higher resolution with real detail. The result replaces only the
-        <b>hi-res override</b> (what <span class="mono">r_texture_overrides 31</span> samples); the .wal keeps its grid, so tiling is
-        unchanged and low-res mode stays stock. Sharper walls in screenshots and mapping, no effect in wal mode.</p>
-      ${!tool.installed ? `<p class="sk-err">The AI upscaler is not installed yet - open the Skin studio's AI upscale once to download it (${tool.downloadMB} MB).</p>` : ''}
-      <div class="flatrow"><span class="count">Source:</span>
-        <button class="scbtn${src === 'auto' ? ' sel' : ''}" data-src="auto" title="Whatever the engine would sample in hi-res mode - community hi-res packs first">best available</button>
-        <button class="scbtn${src === 'low' ? ' sel' : ''}" data-src="low" title="The original paletted .wal art, redrawn sharper - the classic look, just crisp">original low-res (.wal)</button></div>
-      <div class="flatrow"><span class="count">Look:</span>
-        <button class="scbtn${model === 'detail' ? ' sel' : ''}" data-model="detail" title="realesrgan-x4plus: keeps grime, stone edges, wood grain - best for walls, floors, rock, metal">detailed</button>
-        <button class="scbtn${model === 'smooth' ? ' sel' : ''}" data-model="smooth" title="realesr-animevideov3: flatter and cleaner - keeps fine geometric patterns (grates, checker lamps, signs) that the detailed model smooths away">smooth</button></div>
-      <div class="flatrow"><span class="count">Scale:</span>
-        ${[2, 3, 4].map(f => `<button class="scbtn${f === factor ? ' sel' : ''}" data-f="${f}">${f}x</button>`).join('')}
-        <span class="count">textures too big for ${factor}x drop to the largest that fits 4096 px</span></div>
-      <div class="flatrow"><span class="count">Skip textures already at least:</span>
-        ${[512, 1024, 2048].map(v => `<button class="scbtn${v === minSkip ? ' sel' : ''}" data-s="${v}">${v} px</button>`).join('')}</div>
-      <div class="upplan">
-        <div class="flatrow" style="margin:0">
-          <span><b id="upSelCount">${nSel}</b> of ${lastEligible.length} textures selected${plan.cached ? ` (<b>${plan.cached}</b> already cached, instant)` : ''}${doneNames.length ? ` · ${doneNames.length} done (tick to redo with the settings above)` : ''}</span>
-          <span style="flex:1"></span>
-          <button class="small" id="upAll">All</button>
-          <button class="small" id="upNone">None</button>
-        </div>
-        <div class="upgrid" id="upGrid">${plan.eligible.map(e => `
-          <label class="upitem${isSel(e.name) ? ' sel' : ''}" data-name="${e.name}" title="${e.name} · ${e.w}×${e.h} ${e.ext ? e.ext.slice(1) : ''} → ${e.w * e.factor}×${e.h * e.factor}${e.regen ? ' · regenerates a missing file' : ''}">
-            <input type="checkbox" ${isSel(e.name) ? 'checked' : ''}>
-            <img loading="lazy" src="${thumbUrl({ tex: e.name, size: 64, res: src === 'low' ? 'low' : 'hi' })}" alt="">
-            <span class="upname">${e.name.split('/').pop()}<small>${e.w}×${e.h} → ${e.factor}x</small></span>
-          </label>`).join('')}${plan.already.map(a => `
-          <label class="upitem done${isSel(a.name) ? ' sel' : ''}" data-name="${a.name}" title="${a.name} · already upscaled ${a.factor}x ${a.model}${a.src === 'low' ? ' from the .wal' : ''} - tick to redo it with the settings above">
-            <input type="checkbox" ${isSel(a.name) ? 'checked' : ''}>
-            <img loading="lazy" src="${thumbUrl({ upscale: a.name, factor: a.factor, src: a.src, model: a.model, size: 64 })}" alt="">
-            <span class="upname">${a.name.split('/').pop()}<small>done · ${a.factor}x ${a.model}${a.src === 'low' ? ' · wal' : ''}</small></span>
-          </label>`).join('')}</div>
-        ${plan.eligible.some(e => e.regen) ? `<div class="sk-err">${plan.eligible.filter(e => e.regen).length} texture${plan.eligible.filter(e => e.regen).length === 1 ? '' : 's'} of this map's preset ${plan.eligible.filter(e => e.regen).length === 1 ? 'has' : 'have'} no generated file on this PC (imported preset or cleared cache) - ticked above, the run regenerates them with their own settings.</div>` : ''}
-        <div class="count">${plan.skipHiRes.length} already hi-res · ${plan.skipSwapped.length} have other swaps · ${plan.already.length} upscaled · ${plan.skipMissing.length} missing · ${plan.tooBig.length} over the size limit${plan.noGrid.length ? ` · <span title="${plan.noGrid.join(', ')}">${plan.noGrid.length} without a .wal (the engine would tile them ${factor}x denser - left alone)</span>` : ''}</div>
-        ${nSel ? `<div class="count">estimated ${est} on your GPU</div>` : ''}
-      </div>
-      ${status.finished && status.map === map ? `<p class="mnote">Last run: ${status.applied} textures applied${status.failed.length ? `, ${status.failed.length} failed` : ''}${status.cancelled ? ' (cancelled)' : ''}.</p>` : ''}
-      ${cache ? `<p class="mnote upcache${cache.bytes > 1073741824 ? ' sk-err' : ''}">${cache.bytes > 1073741824 ? 'The cache is getting big. ' : ''}Cache on this PC: ${cache.files} file${cache.files === 1 ? '' : 's'}, ${(cache.bytes / 1048576).toFixed(0)} MB, shared by every map${cache.unusedFiles ? ` · <b>${cache.unusedFiles}</b> unused (${(cache.unusedBytes / 1048576).toFixed(0)} MB) <button class="small" id="upClearCache" title="Deletes cache files no map uses any more - they are simply regenerated if needed again">Clear unused</button>` : ' · nothing unused'}</p>` : ''}
-      ${busyElsewhere ? `<p class="sk-err">Busy upscaling ${status.map} right now - wait for it to finish.</p>` : ''}`;
-    openModal(`
-      <div class="mhead"><h3>✨ AI upscale textures <span class="mono">${map}</span></h3><button class="mclose">✕</button></div>
-      <div class="mbody">${body}</div>
-      <div class="mfoot">
-        ${running ? '<button class="danger" id="upCancel">Cancel</button>'
-          : `${plan.already.length ? '<button class="danger" id="upRemove">Remove upscales</button>' : ''}
-             <button class="primary" id="upStart" ${!tool.installed || !nSel || busyElsewhere ? 'disabled' : ''}>Upscale ${nSel} texture${nSel === 1 ? '' : 's'}</button>`}
-      </div>`);
-    if (running) {
-      $('upCancel').addEventListener('click', () => apiPost('/api/upscale/cancel', {}).catch(() => {}));
-      upscalePoll = setTimeout(async () => {
-        if ($('modalOverlay').classList.contains('hidden')) return;
-        const st = await apiGet('/api/upscale/status').catch(() => null);
-        if (st && !st.running) {
-          closeModal();
-          for (const f of (st.failed || []).slice(0, 4)) toast(f, true);
-          toast(st.applied ? `AI upscale done: ${st.applied} textures on ${map} - F9 in game (hi-res mode)` : 'AI upscale finished with nothing to apply', !st.applied);
-          if (state.activeMap === map) await selectMap(map);
-        } else render();
-      }, 800);
-      return;
-    }
-    $('modal').querySelectorAll('.scbtn[data-f]').forEach(b => b.addEventListener('click', () => {
-      factor = Number(b.dataset.f); localStorage.setItem('aq2ts.upFactor', factor); render();
-    }));
-    $('modal').querySelectorAll('.scbtn[data-s]').forEach(b => b.addEventListener('click', () => {
-      minSkip = Number(b.dataset.s); localStorage.setItem('aq2ts.upSkip', minSkip); render();
-    }));
-    $('modal').querySelectorAll('.scbtn[data-src]').forEach(b => b.addEventListener('click', () => {
-      src = b.dataset.src; localStorage.setItem('aq2ts.upSrc', src); render();
-    }));
-    $('modal').querySelectorAll('.scbtn[data-model]').forEach(b => b.addEventListener('click', () => {
-      model = b.dataset.model; localStorage.setItem('aq2ts.upModel', model); render();
-    }));
-    const syncSel = () => {
-      const n = lastEligible.filter(isSel).length;
-      $('upSelCount').textContent = n;
-      const go = $('upStart');
-      if (go) { go.disabled = !tool.installed || !n || busyElsewhere; go.textContent = `Upscale ${n} texture${n === 1 ? '' : 's'}`; }
-      $('modal').querySelectorAll('.upitem').forEach(el => el.classList.toggle('sel', isSel(el.dataset.name)));
-    };
-    $('modal').querySelectorAll('.upitem input').forEach(cb => cb.addEventListener('change', () => {
-      if (!selected) selected = new Set(lastEligible.filter(n => !doneNames.includes(n)));
-      const name = cb.closest('.upitem').dataset.name;
-      if (cb.checked) selected.add(name); else selected.delete(name);
-      syncSel();
-    }));
-    $('upAll').addEventListener('click', () => { selected = new Set(lastEligible); $('modal').querySelectorAll('.upitem input').forEach(cb => { cb.checked = true; }); syncSel(); });
-    $('upNone').addEventListener('click', () => { selected = new Set(); $('modal').querySelectorAll('.upitem input').forEach(cb => { cb.checked = false; }); syncSel(); });
-    const cc = $('upClearCache');
-    if (cc) cc.addEventListener('click', async () => {
-      cc.disabled = true;
-      try {
-        const r = await apiPost('/api/upscale/clearcache', {});
-        toast(`Removed ${r.removed} unused cache file${r.removed === 1 ? '' : 's'} (${(r.removedBytes / 1048576).toFixed(0)} MB)`);
-        render();
-      } catch (e) { toast(e.message, true); cc.disabled = false; }
-    });
-    const rm = $('upRemove');
-    if (rm) rm.addEventListener('click', async () => {
-      try {
-        const r = await apiPost('/api/upscale/remove', { map });
-        closeModal();
-        applyMutation(r);
-        toast(`Removed ${r.removed} upscale${r.removed === 1 ? '' : 's'} on ${map}`);
-      } catch (e) { toast(e.message, true); }
-    });
-    const go = $('upStart');
-    if (go) go.addEventListener('click', async () => {
-      go.disabled = true;
-      try {
-        await apiPost('/api/upscale/map', { map, factor, minSkip, src, model, names: lastEligible.filter(isSel) });
-        render();
-      } catch (e) { toast('Upscale: ' + e.message, true); go.disabled = false; }
-    });
-  };
-  render();
-}
-
 // bridge for the viewer module
 window.AQTS = {
   state,

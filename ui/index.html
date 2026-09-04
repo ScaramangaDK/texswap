@@ -222,6 +222,71 @@
     <input type="file" id="skFile" class="hidden">
   </div>
 
+  <div id="upscaleOverlay" class="hidden">
+    <div class="sk-top">
+      <span class="sk-title">✨ AI upscale</span>
+      <span id="upMapName" class="mono up-map"></span>
+      <span id="upStatus" class="vhover mono"></span>
+      <button id="upClose">✕ close (Esc)</button>
+    </div>
+    <div class="up-main">
+      <aside class="sk-side up-side">
+        <div class="rpsection"><div class="rphead">Settings</div><div class="rpbody up-form">
+          <label>Source
+            <select id="upSrc">
+              <option value="low">Original low-res (.wal) - the classic art, crisp</option>
+              <option value="auto">Best available - hi-res packs first</option>
+            </select></label>
+          <label>Look
+            <select id="upModel">
+              <option value="detail">Detailed - grime, stone edges, wood grain</option>
+              <option value="smooth">Smooth - clean edges, keeps fine patterns</option>
+            </select></label>
+          <label>Scale
+            <select id="upFactor">
+              <option value="4">4x - sharpest</option>
+              <option value="3">3x</option>
+              <option value="2">2x - chunkier, smaller files</option>
+            </select></label>
+          <label>Skip textures already at least
+            <select id="upSkip">
+              <option value="512">512 px</option>
+              <option value="1024">1024 px</option>
+              <option value="2048">2048 px</option>
+              <option value="100000">never skip</option>
+            </select></label>
+          <p class="up-help">Only the hi-res override changes (what <span class="mono">r_texture_overrides 31</span> samples). The .wal keeps its grid, so tiling stays put and low-res mode stays stock. Textures above 4096 px drop to the largest scale that fits.</p>
+        </div></div>
+        <div class="rpsection"><div class="rphead">Selection</div><div class="rpbody">
+          <div class="up-sel"><b id="upSelCount">0</b> <span id="upSelText"></span></div>
+          <div class="rprow"><button id="upAll" class="small">All</button><button id="upNone" class="small">None</button></div>
+          <div id="upNotes" class="up-notes"></div>
+        </div></div>
+        <div class="rpsection"><div class="rphead">Run</div><div class="rpbody">
+          <button class="primary" id="upStart">Upscale</button>
+          <div id="upProgress" class="hidden">
+            <div class="sk-bar"><div id="upBar"></div></div>
+            <div id="upProgText" class="count mono"></div>
+            <button class="danger" id="upCancel">Cancel</button>
+          </div>
+          <div id="upLast" class="count"></div>
+          <button class="danger" id="upRemove" title="Remove every AI upscale on this map (your other swaps stay)">Remove upscales on this map</button>
+        </div></div>
+        <div class="rpsection"><div class="rphead">Cache</div><div class="rpbody">
+          <div id="upCache" class="count"></div>
+          <button class="small" id="upClearCache" title="Deletes cache files no map uses any more - they are regenerated if needed again">Clear unused</button>
+        </div></div>
+      </aside>
+      <section class="up-center">
+        <div class="up-toolbar">
+          <input id="upFilter" type="search" placeholder="Filter textures…">
+          <span id="upGridInfo" class="count"></span>
+        </div>
+        <div id="upGrid" class="up-grid"></div>
+      </section>
+    </div>
+  </div>
+
   <script src="main.js"></script>
   <script type="module" src="viewer.js"></script>
   <script type="module" src="skins.js"></script>
