@@ -163,7 +163,7 @@ async function loadMap(mapPath) {
   toast(`${r.payload.name}: ${r.payload.stats.faces} faces, ${r.payload.stats.brushes} brushes, ${r.payload.stats.textures} textures`);
 }
 
-function setPayload(payload, keepCamera = false) {
+function setPayload(payload, keepCamera = false, keepSel = false) {
   if (keepCamera && M.three) {
     M.camSave = {
       pos: M.three.camera.position.clone(),
@@ -173,7 +173,9 @@ function setPayload(payload, keepCamera = false) {
     M.camSave = null;
   }
   M.payload = payload;
-  M.sel = new Set();
+  // face ids are parse-order and edits never add or remove lines, so a
+  // selection stays valid across saves — essential for paint-and-compare
+  M.sel = keepSel ? new Set([...M.sel].filter(id => id < payload.faces.length)) : new Set();
   M.facesById = new Map(payload.faces.map(f => [f.id, f]));
   M.entsByIdx = new Map(payload.ents.map(e => [e.idx, e]));
   $('mpEmpty').classList.add('hidden');
@@ -187,9 +189,55 @@ function setPayload(payload, keepCamera = false) {
   const errs = payload.issues.filter(i => i.level !== 'info').length;
   $('mpIssueBadge').classList.toggle('hidden', !errs);
   $('mpIssueBadge').textContent = errs;
+  updateHistoryButtons();
   buildScene();
+  if (M.sel.size) rebuildSelMesh();
   renderPanel();
   updateSelUI();
+  renderFlagsBox();
+}
+
+function updateHistoryButtons() {
+  const h = (M.payload && M.payload.history) || { undo: 0, redo: 0 };
+  $('mpUndo').disabled = !h.undo;
+  $('mpRedo').disabled = !h.redo;
+}
+
+// one shared write path: texture paints, the retexture modal and the flag
+// editor all go through /api/mapsrc/edit and land in the same undo history
+async function applyEdit(changes, doneMsg) {
+  if (!M.payload || !changes.length) return;
+  $('mpStatus').textContent = `writing ${changes.length} face${changes.length === 1 ? '' : 's'}…`;
+  try {
+    const r = await apiPost('/api/mapsrc/edit', {
+      path: M.payload.path,
+      changes,
+      keepSize: $('mpKeepSize').checked,
+    });
+    for (const t of r.missingTargets || []) toast(`${t} is not in this install — it will show as missing until the pack is in place`, true);
+    if (doneMsg) toast(doneMsg + (r.backup ? ` · backup: ${String(r.backup).split(/[\\/]/).pop()}` : ''));
+    setPayload(r.payload, true, true);
+  } catch (e) {
+    toast(e.message, true);
+    $('mpStatus').textContent = '';
+  }
+}
+
+function paintSelection(to) {
+  const n = M.sel.size;
+  applyEdit([...M.sel].map(id => ({ face: id, to })), `${n} face${n === 1 ? '' : 's'} → ${to}`);
+}
+
+async function doUndoRedo(redo) {
+  if (!M.payload) return;
+  try {
+    const r = await apiPost(redo ? '/api/mapsrc/redo' : '/api/mapsrc/undo', { path: M.payload.path });
+    if (!r.changed) { toast(redo ? 'nothing to redo' : 'nothing to undo'); return; }
+    toast(redo ? '↷ redone' : '↶ undone');
+    setPayload(r.payload, true, true);
+  } catch (e) {
+    toast(e.message, true);
+  }
 }
 
 function disposeScene() {
@@ -357,6 +405,8 @@ function buildScene() {
         return;
       }
       if (typing || modalOpen()) return;
+      if (e.ctrlKey && e.code === 'KeyZ') { e.preventDefault(); doUndoRedo(e.shiftKey); return; }
+      if (e.ctrlKey && e.code === 'KeyY') { e.preventDefault(); doUndoRedo(true); return; }
       if (e.code === 'KeyB') { growBrush(); return; }
       if (e.code === 'KeyT') { growTexture(); return; }
       t.keys.add(e.code);
@@ -519,7 +569,104 @@ function selectTexture(name, add = false) {
 function selChanged() {
   rebuildSelMesh();
   updateSelUI();
-  if (M.tab === 'tex') renderPanel(); // sync row highlights
+  renderFlagsBox();
+  if (M.tab === 'tex') renderPanel(); // sync tile highlights + paint hints
+}
+
+// ---------- surface / content properties (bottom of the panel) ----------
+const SURF_BITS = [
+  [0x1, 'light', 'face emits light — set value to the radiance'],
+  [0x2, 'slick', 'slippery surface'],
+  [0x4, 'sky', 'sky surface'],
+  [0x8, 'warp', 'liquid warp distortion'],
+  [0x10, 'trans33', '33% opacity'],
+  [0x20, 'trans66', '66% opacity'],
+  [0x40, 'flowing', 'texture scrolls along its angle'],
+  [0x80, 'nodraw', 'never drawn'],
+  [0x100, 'hint', 'BSP split hint'],
+  [0x200, 'skip', 'compiler ignores this face'],
+];
+const CONT_BITS = [
+  [0x1, 'solid', 'blocks movement'],
+  [0x2, 'window', 'solid but translucent'],
+  [0x8, 'lava', ''], [0x10, 'slime', ''], [0x20, 'water', ''], [0x40, 'mist', 'non-solid, drawn'],
+  [0x10000, 'playerclip', 'blocks players only'],
+  [0x20000, 'monsterclip', 'blocks monsters only'],
+  [0x1000000, 'origin', 'rotation origin brush'],
+  [0x8000000, 'detail', 'detail brush — no vis splits'],
+  [0x10000000, 'translucent', 'render sorted behind glass'],
+  [0x20000000, 'ladder', 'climbable'],
+];
+
+function renderFlagsBox() {
+  const box = $('mpFlagsBox');
+  if (!M.payload || !M.sel.size) { box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+  const faces = [...M.sel].map(id => M.facesById.get(id));
+  const explicit = faces.filter(f => f.ex).length;
+  $('mpFlagsInfo').textContent = `${faces.length} face${faces.length === 1 ? '' : 's'} · ${explicit} with explicit numbers`;
+
+  const stateOf = (field, bit) => {
+    let on = 0;
+    for (const f of faces) if (f[field] & bit) on++;
+    return on === 0 ? '0' : on === faces.length ? '1' : 'm';
+  };
+  const buildCol = (el, groupLabel, bits, field, kind) => {
+    el.textContent = '';
+    const g = document.createElement('div');
+    g.className = 'fgroup';
+    g.textContent = groupLabel;
+    el.appendChild(g);
+    for (const [bit, name, hint] of bits) {
+      const base = stateOf(field, bit);
+      const lab = document.createElement('label');
+      if (hint) lab.title = hint;
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.dataset.kind = kind;
+      cb.dataset.bit = bit;
+      cb.dataset.base = base;
+      cb.checked = base === '1';
+      cb.indeterminate = base === 'm';
+      lab.append(cb, document.createTextNode(name + (base === 'm' ? ' (mixed)' : '')));
+      el.appendChild(lab);
+    }
+  };
+  buildCol($('mpSurfCol'), 'surface', SURF_BITS, 'fl', 's');
+  buildCol($('mpContCol'), 'contents', CONT_BITS, 'ct', 'c');
+  const vals = new Set(faces.map(f => f.va));
+  const vi = $('mpFlagValue');
+  vi.value = vals.size === 1 ? String([...vals][0]) : '';
+  vi.placeholder = vals.size === 1 ? '0' : 'mixed';
+  vi.dataset.base = vals.size === 1 ? String([...vals][0]) : 'm';
+  $('mpFlagsClear').disabled = !explicit;
+}
+
+function applyFlags() {
+  const masks = { setSurf: 0, clearSurf: 0, setCont: 0, clearCont: 0 };
+  let touched = false;
+  for (const cb of $('mpFlagsBox').querySelectorAll('input[type=checkbox]')) {
+    const base = cb.dataset.base;
+    if (cb.indeterminate) continue;                       // mixed, untouched
+    if (base !== 'm' && (base === '1') === cb.checked) continue; // unchanged
+    touched = true;
+    const bit = Number(cb.dataset.bit);
+    const s = cb.dataset.kind === 's';
+    if (cb.checked) masks[s ? 'setSurf' : 'setCont'] |= bit;
+    else masks[s ? 'clearSurf' : 'clearCont'] |= bit;
+  }
+  const vi = $('mpFlagValue');
+  const change = { ...masks };
+  if (vi.value !== '' && vi.value !== vi.dataset.base) { change.value = Number(vi.value); touched = true; }
+  if (!touched) { toast('no property changes to apply'); return; }
+  const n = M.sel.size;
+  applyEdit([...M.sel].map(id => ({ face: id, ...change })), `surface properties updated on ${n} face${n === 1 ? '' : 's'}`);
+}
+
+function clearFlags() {
+  const withEx = [...M.sel].filter(id => M.facesById.get(id).ex);
+  if (!withEx.length) return;
+  applyEdit(withEx.map(id => ({ face: id, clearExtra: true })), `${withEx.length} face${withEx.length === 1 ? '' : 's'} back to texture defaults`);
 }
 
 function rebuildSelMesh() {
@@ -647,9 +794,12 @@ function renderPanel() {
       }
       const cell = document.createElement('button');
       cell.className = 'mp-tile' + (selTex.has(t.name) ? ' sel' : '');
+      const imgbox = document.createElement('div');
+      imgbox.className = 'mp-tileimg';
       const img = document.createElement('img');
       img.loading = 'lazy';
       img.src = AQTS().thumbUrl({ tex: t.name, size: thumbSize });
+      imgbox.appendChild(img);
       const name = document.createElement('div');
       name.className = 'mp-tilename';
       name.textContent = t.name.includes('/') && sort === 'folder' ? t.name.slice(t.name.lastIndexOf('/') + 1) : t.name;
@@ -662,15 +812,22 @@ function renderPanel() {
       if (t.utility) bits.push('util');
       if (t.sky) bits.push('sky');
       meta.textContent = bits.join(' · ');
-      cell.title = `${t.name}\n${t.faces} faces · ${t.brushes} brushes${t.areaPct ? ` · ${t.areaPct}% of the visible map` : ''}${t.w ? `\n${t.w}×${t.h}` : ''}${t.missing ? '\nNOT FOUND in the install' : ''}\nclick = select its faces · Ctrl+click = add`;
-      cell.append(img, name, meta);
+      const painting = M.sel.size > 0;
+      cell.title = `${t.name}\n${t.faces} faces · ${t.brushes} brushes${t.areaPct ? ` · ${t.areaPct}% of the visible map` : ''}${t.w ? `\n${t.w}×${t.h}` : ''}${t.missing ? '\nNOT FOUND in the install' : ''}\n${painting ? '🎨 click = PAINT the selection with this texture · Ctrl+click = add its faces to the selection' : 'click = select its faces · Ctrl+click = add'}`;
+      cell.append(imgbox, name, meta);
       if (t.missing) {
         const b = document.createElement('span');
         b.className = 'mp-tilemiss';
         b.textContent = 'missing';
         cell.appendChild(b);
       }
-      cell.addEventListener('click', e => selectTexture(t.name, e.ctrlKey));
+      cell.addEventListener('click', e => {
+        // TrenchBroom behavior: with faces selected, clicking a texture in
+        // the browser paints them; Ctrl+click keeps selecting instead
+        if (e.ctrlKey) selectTexture(t.name, true);
+        else if (M.sel.size) paintSelection(t.name);
+        else selectTexture(t.name, false);
+      });
       grid.appendChild(cell);
     }
     list.appendChild(grid);
@@ -682,38 +839,73 @@ function renderPanel() {
       list.appendChild(d);
     }
   } else if (M.tab === 'ent') {
+    // search matches the classname OR any key/value (find "shiplog" or a
+    // sound file, not just class names); groups collapse to stay readable
+    const terms = q.split(/\s+/).filter(Boolean);
+    const entMatch = e => !terms.length || terms.every(w =>
+      e.classname.toLowerCase().includes(w) ||
+      Object.entries(e.props).some(([k, v]) => k.toLowerCase().includes(w) || String(v).toLowerCase().includes(w)));
     const byCls = new Map();
     for (const e of M.payload.ents) {
+      if (!entMatch(e)) continue;
       if (!byCls.has(e.classname)) byCls.set(e.classname, []);
       byCls.get(e.classname).push(e);
     }
-    const classes = [...byCls.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    if (!M.entOpen) M.entOpen = new Set();
+    const classes = [...byCls.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+    const colorChip = e => {
+      const c = (e.props._color || '').trim().split(/\s+/).map(parseFloat);
+      if (c.length !== 3 || c.some(v => !Number.isFinite(v))) return '';
+      const mx = Math.max(...c) > 1.001 ? 255 : 1;
+      const rgb = c.map(v => Math.round(v / mx * 255));
+      return `<span class="mp-lightchip" style="background:rgb(${rgb.join(',')})"></span> `;
+    };
+    const summarize = e => {
+      const bits = [];
+      if (e.classname === 'light') bits.push(colorChip(e) + (e.props.light || e.props._light || '300'));
+      if (e.props.noise) bits.push('🔊 ' + e.props.noise);
+      if (e.props.model) bits.push(e.props.model);
+      if (e.props.message) bits.push('“' + String(e.props.message).slice(0, 26) + '”');
+      if (e.brushes) bits.push(e.brushes + ' brush' + (e.brushes === 1 ? '' : 'es'));
+      if (e.targetname) bits.push('named ' + e.targetname);
+      if (e.target) bits.push('→ ' + e.target);
+      if (!bits.length && e.origin) bits.push(e.origin.join(' '));
+      return bits.join(' · ') || '—';
+    };
     for (const [cls, ents] of classes) {
-      if (q && !cls.toLowerCase().includes(q)) continue;
-      const head = document.createElement('div');
-      head.className = 'mp-grouphead';
-      head.textContent = `${cls} (${ents.length})`;
+      const open = M.entOpen.has(cls) || terms.length > 0;
+      const head = document.createElement('button');
+      head.className = 'mp-entgroup';
+      head.innerHTML = `<span class="caret">${open ? '▾' : '▸'}</span> ${cls} <span class="count">${ents.length}</span>`;
+      head.addEventListener('click', () => {
+        if (M.entOpen.has(cls)) M.entOpen.delete(cls); else M.entOpen.add(cls);
+        renderPanel();
+      });
       list.appendChild(head);
-      for (const e of ents.slice(0, 60)) {
+      if (!open) continue;
+      for (const e of ents.slice(0, 120)) {
         const row = document.createElement('button');
         row.className = 'mp-row';
-        const bits = [];
-        if (e.origin) bits.push(e.origin.join(' '));
-        if (e.brushes) bits.push(e.brushes + ' brushes');
-        if (e.targetname) bits.push('“' + e.targetname + '”');
-        if (e.target) bits.push('→ ' + e.target);
-        row.innerHTML = `<div class="mp-rowmain"><div class="mp-rowname">#${e.idx}</div>
-          <div class="mp-rowmeta">${bits.join(' · ') || '—'}</div></div>`;
+        row.title = 'fly to it';
+        row.innerHTML = `<div class="mp-rowmain"><div class="mp-rowname">#${e.idx} <span class="mp-entmeta">line ${e.line}</span></div>
+          <div class="mp-rowmeta">${summarize(e)}</div></div>`;
         row.addEventListener('click', () => flyTo(e));
         list.appendChild(row);
       }
-      if (ents.length > 60) {
+      if (ents.length > 120) {
         const d = document.createElement('div');
         d.className = 'count';
         d.style.padding = '2px 8px';
-        d.textContent = `…and ${ents.length - 60} more`;
+        d.textContent = `…and ${ents.length - 120} more — narrow the search`;
         list.appendChild(d);
       }
+    }
+    if (!classes.length) {
+      const d = document.createElement('div');
+      d.className = 'count';
+      d.style.padding = '12px';
+      d.textContent = 'no entities match';
+      list.appendChild(d);
     }
   } else {
     for (const i of M.payload.issues) {
@@ -813,24 +1005,11 @@ async function openRetexture() {
   };
   $('mpPickSearch').addEventListener('input', renderGrid);
   $('mpPickSearch').focus();
-  $('mpPickApply').addEventListener('click', async () => {
+  $('mpPickApply').addEventListener('click', () => {
     if (!picked) return;
-    const changes = [...M.sel].map(id => ({ face: id, to: picked }));
+    const n = M.sel.size;
     closeModal();
-    $('mpStatus').textContent = `retexturing ${changes.length} faces…`;
-    try {
-      const r = await apiPost('/api/mapsrc/retexture', {
-        path: M.payload.path,
-        changes,
-        keepSize: $('mpKeepSize').checked,
-      });
-      for (const t of r.missingTargets || []) toast(`${t} is not in this install — the map will compile with it missing until the pack is in place`, true);
-      toast(`${r.changed} faces → ${picked} · backup: ${String(r.backup).split(/[\\/]/).pop()}`);
-      setPayload(r.payload, true);
-    } catch (e) {
-      toast(e.message, true);
-      $('mpStatus').textContent = '';
-    }
+    applyEdit([...M.sel].map(id => ({ face: id, to: picked })), `${n} face${n === 1 ? '' : 's'} → ${picked}`);
   });
   renderGrid();
 }
@@ -850,6 +1029,10 @@ function bind() {
   $('mpSelBrush').addEventListener('click', growBrush);
   $('mpSelTex').addEventListener('click', growTexture);
   $('mpRetex').addEventListener('click', openRetexture);
+  $('mpUndo').addEventListener('click', () => doUndoRedo(false));
+  $('mpRedo').addEventListener('click', () => doUndoRedo(true));
+  $('mpFlagsApply').addEventListener('click', applyFlags);
+  $('mpFlagsClear').addEventListener('click', clearFlags);
   $('mpLights').addEventListener('change', () => { if (M.three) buildLights(); });
   $('mpLinks').addEventListener('change', () => { if (M.three) buildLinks(); });
   $('mpUtility').addEventListener('change', () => {

@@ -133,11 +133,18 @@ export function parseMapSource(text) {
         face.fieldOffs.sy = { start: syT.start, end: syT.end };
         i += 5;
       }
-      // optional trailing: contents flags value
+      // optional trailing: contents flags value (offsets recorded so the
+      // flag editor can splice or strip them surgically)
       if (i + 2 < toks.length + 1 && toks[i] && !'()[]'.includes(toks[i].t)) {
         const c = toks[i], f = toks[i + 1], v = toks[i + 2];
-        if (c && f && v) face.extra = { contents: num(c.t), flags: num(f.t), value: num(v.t) };
+        if (c && f && v) {
+          face.extra = { contents: num(c.t), flags: num(f.t), value: num(v.t) };
+          face.fieldOffs.ec = { start: c.start, end: c.end };
+          face.fieldOffs.ef = { start: f.start, end: f.end };
+          face.fieldOffs.ev = { start: v.start, end: v.end };
+        }
       }
+      face.lineEnd = toks[toks.length - 1].end;
       faces.push(face);
     }
   }
@@ -503,11 +510,22 @@ export function openMapSource(install, mapPath) {
     .filter(e => ['info_player_start', 'info_player_deathmatch'].includes(e.classname) && e.origin)
     .map(e => [...e.origin, parseFloat(e.props.angle || '0') || 0]);
 
-  // faces payload for selection: per face — texture, brush, line, area
-  const facesOut = parsed.faces.map(f => ({
-    id: f.id, ent: f.ent, brush: f.brush, line: f.line + 1, tex: f.tex,
-    area: faceGeo.has(f.id) ? Math.round(faceGeo.get(f.id).area) : 0,
-  }));
+  // faces payload for selection: per face — texture, brush, line, area,
+  // and the EFFECTIVE surface/content flags (explicit numbers when present,
+  // else the texture's .wal defaults, which the compiler inherits)
+  const walDef = new Map();
+  const defFor = n => {
+    if (!walDef.has(n)) walDef.set(n, walDefaults(install, n));
+    return walDef.get(n);
+  };
+  const facesOut = parsed.faces.map(f => {
+    const base = f.extra || defFor(f.tex);
+    return {
+      id: f.id, ent: f.ent, brush: f.brush, line: f.line + 1, tex: f.tex,
+      area: faceGeo.has(f.id) ? Math.round(faceGeo.get(f.id).area) : 0,
+      fl: base.flags >>> 0, ct: base.contents >>> 0, va: base.value | 0, ex: Boolean(f.extra),
+    };
+  });
 
   const worldspawn = parsed.entities[0] ? parsed.entities[0].props : {};
   const payload = {
@@ -531,6 +549,7 @@ export function openMapSource(install, mapPath) {
     links: entInfo.links,
     issues,
     bounds, spawns,
+    history: historyDepth(abs),
   };
   cache.set(abs, { key, payload, parsed });
   return payload;
@@ -541,65 +560,141 @@ export function cachedParse(mapPath) {
   return hit ? hit.parsed : null;
 }
 
-// ---------- retexture (surgical write) ----------
-// changes: [{ face: id, to: 'dir/name' }], opts: { keepSize: bool }
-// keepSize rewrites scale (and classic offsets) so the texture covers the
-// same world area per tile when the replacement's grid differs.
-export function retextureMap(install, mapPath, changes, opts = {}) {
+// ---------- face edits (surgical writes) + undo/redo ----------
+// A Quake 2 .wal ends in flags/contents/value (the texture's baked
+// defaults); a face WITHOUT explicit trailing numbers inherits them at
+// compile time, so flag edits must start from these.
+export function walDefaults(install, name) {
+  if (!install) return { flags: 0, contents: 0, value: 0 };
+  const buf = install.fs.read('textures/' + name + '.wal');
+  if (!buf || buf.length < 100) return { flags: 0, contents: 0, value: 0 };
+  return { flags: buf.readUInt32LE(88), contents: buf.readUInt32LE(92), value: buf.readUInt32LE(96) };
+}
+
+// per-file undo/redo: each entry stores only the touched lines' old and new
+// text, applied by direct splice — exact, tiny, and format-preserving
+const history = new Map(); // abs path -> { undo: [entry], redo: [entry] }
+const bakDone = new Set(); // one .bak per file per app run — undo covers the rest
+const histFor = abs => {
+  let h = history.get(abs);
+  if (!h) history.set(abs, h = { undo: [], redo: [] });
+  return h;
+};
+export const historyDepth = mapPath => {
+  const h = history.get(path.resolve(mapPath));
+  return { undo: h ? h.undo.length : 0, redo: h ? h.redo.length : 0 };
+};
+
+function writeLines(abs, lines) {
+  fs.writeFileSync(abs, lines.join('\n'), 'latin1');
+  cache.delete(abs);
+}
+
+function backupOnce(abs) {
+  if (bakDone.has(abs)) return null;
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+  const backup = abs + '.texswap-' + stamp + '.bak';
+  fs.copyFileSync(abs, backup);
+  bakDone.add(abs);
+  return backup;
+}
+
+// changes: [{ face, to?, setSurf?, clearSurf?, setCont?, clearCont?,
+//             value?, clearExtra? }], opts: { keepSize }
+// - to: retexture (keepSize rewrites scale+offsets so the world size holds)
+// - set/clear masks edit surface & content flags starting from the face's
+//   explicit numbers or, when absent, the texture's .wal defaults
+// - clearExtra: strip the trailing numbers -> back to pure .wal defaults
+export function applyFaceEdits(install, mapPath, changes, opts = {}) {
   const abs = path.resolve(mapPath);
-  const payload = openMapSource(install, abs); // ensures cache holds parsed
+  openMapSource(install, abs); // ensures cache holds parsed
   const parsed = cachedParse(abs);
   if (!parsed) throw new Error('map not parsed');
   const byId = new Map(parsed.faces.map(f => [f.id, f]));
   const lines = parsed.lines.slice();
-  const perLine = new Map(); // line idx -> splices [{start,end,text}]
+  const perLine = new Map();
+  const fmt = v => String(Math.round(v * 10000) / 10000);
   let changed = 0;
 
   for (const ch of changes) {
     const f = byId.get(ch.face);
-    if (!f || !ch.to || ch.to === f.tex) continue;
+    if (!f) continue;
     const splices = [];
-    splices.push({ start: f.texStart, end: f.texEnd, text: ch.to });
-    if (opts.keepSize && install) {
-      const od = install.mappingDims(f.tex);
-      const nd = install.mappingDims(ch.to);
-      if (od && nd && (od.w !== nd.w || od.h !== nd.h)) {
-        const rw = od.w / nd.w, rh = od.h / nd.h;
-        const fmt = v => {
-          const r = Math.round(v * 10000) / 10000;
-          return Number.isInteger(r) ? String(r) : String(r);
-        };
-        if (f.fieldOffs.sx) splices.push({ ...f.fieldOffs.sx, text: fmt((f.sx || 1) * rw) });
-        if (f.fieldOffs.sy) splices.push({ ...f.fieldOffs.sy, text: fmt((f.sy || 1) * rh) });
-        // offsets are texel-space: scale by the new grid so alignment holds
-        if (f.axes) {
-          if (f.fieldOffs.uo) splices.push({ ...f.fieldOffs.uo, text: fmt(f.axes.uo / rw) });
-          if (f.fieldOffs.vo) splices.push({ ...f.fieldOffs.vo, text: fmt(f.axes.vo / rh) });
-        } else {
-          if (f.fieldOffs.ox) splices.push({ ...f.fieldOffs.ox, text: fmt(f.ox / rw) });
-          if (f.fieldOffs.oy) splices.push({ ...f.fieldOffs.oy, text: fmt(f.oy / rh) });
+    if (ch.to && ch.to !== f.tex) {
+      splices.push({ start: f.texStart, end: f.texEnd, text: ch.to });
+      if (opts.keepSize && install) {
+        const od = install.mappingDims(f.tex);
+        const nd = install.mappingDims(ch.to);
+        if (od && nd && (od.w !== nd.w || od.h !== nd.h)) {
+          const rw = od.w / nd.w, rh = od.h / nd.h;
+          if (f.fieldOffs.sx) splices.push({ ...f.fieldOffs.sx, text: fmt((f.sx || 1) * rw) });
+          if (f.fieldOffs.sy) splices.push({ ...f.fieldOffs.sy, text: fmt((f.sy || 1) * rh) });
+          if (f.axes) {
+            if (f.fieldOffs.uo) splices.push({ ...f.fieldOffs.uo, text: fmt(f.axes.uo / rw) });
+            if (f.fieldOffs.vo) splices.push({ ...f.fieldOffs.vo, text: fmt(f.axes.vo / rh) });
+          } else {
+            if (f.fieldOffs.ox) splices.push({ ...f.fieldOffs.ox, text: fmt(f.ox / rw) });
+            if (f.fieldOffs.oy) splices.push({ ...f.fieldOffs.oy, text: fmt(f.oy / rh) });
+          }
         }
       }
     }
+    if (ch.clearExtra && f.extra && f.fieldOffs.sy) {
+      splices.push({ start: f.fieldOffs.sy.end, end: f.fieldOffs.ev.end, text: '' });
+    } else if (ch.setSurf || ch.clearSurf || ch.setCont || ch.clearCont || ch.value !== undefined) {
+      const base = f.extra || walDefaults(install, f.tex);
+      const nf = ((base.flags & ~(ch.clearSurf || 0)) | (ch.setSurf || 0)) >>> 0;
+      const nc = ((base.contents & ~(ch.clearCont || 0)) | (ch.setCont || 0)) >>> 0;
+      const nv = ch.value !== undefined ? Math.round(Number(ch.value) || 0) : base.value;
+      if (f.extra) {
+        splices.push({ ...f.fieldOffs.ec, text: String(nc) });
+        splices.push({ ...f.fieldOffs.ef, text: String(nf) });
+        splices.push({ ...f.fieldOffs.ev, text: String(nv) });
+      } else {
+        splices.push({ start: f.lineEnd, end: f.lineEnd, text: ` ${nc} ${nf} ${nv}` });
+      }
+    }
+    if (!splices.length) continue;
     if (!perLine.has(f.line)) perLine.set(f.line, []);
     perLine.get(f.line).push(...splices);
     changed++;
   }
-  if (!changed) return { changed: 0, backup: null };
+  if (!changed) return { changed: 0, backup: null, history: historyDepth(abs) };
 
+  const entry = { before: {}, after: {} };
   for (const [li, splices] of perLine) {
+    entry.before[li] = lines[li];
     let line = lines[li];
     splices.sort((a, b) => b.start - a.start);
     for (const s of splices) line = line.slice(0, s.start) + s.text + line.slice(s.end);
     lines[li] = line;
+    entry.after[li] = line;
   }
+  const backup = backupOnce(abs);
+  writeLines(abs, lines);
+  const h = histFor(abs);
+  h.undo.push(entry);
+  if (h.undo.length > 60) h.undo.shift();
+  h.redo = [];
+  return { changed, backup, history: historyDepth(abs) };
+}
 
-  const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
-  const backup = abs + '.texswap-' + stamp + '.bak';
-  fs.copyFileSync(abs, backup);
-  fs.writeFileSync(abs, lines.join('\n'), 'latin1');
-  cache.delete(abs);
-  return { changed, backup };
+export function undoRedo(install, mapPath, redo = false) {
+  const abs = path.resolve(mapPath);
+  const h = histFor(abs);
+  const from = redo ? h.redo : h.undo;
+  if (!from.length) return { changed: 0, history: historyDepth(abs) };
+  const entry = from.pop();
+  const apply = redo ? entry.after : entry.before;
+  const text = fs.readFileSync(abs, 'latin1');
+  const lines = text.split('\n');
+  let changed = 0;
+  for (const [li, t] of Object.entries(apply)) {
+    if (lines[li] !== undefined) { lines[li] = t; changed++; }
+  }
+  writeLines(abs, lines);
+  (redo ? h.undo : h.redo).push(entry);
+  return { changed, history: historyDepth(abs) };
 }
 
 // ---------- browse + recents ----------

@@ -9,7 +9,7 @@ import { getInstall, setModChoice, readLastDir, saveLastDir } from './core/scann
 import { flatImage, parseColor } from './core/gen.js';
 import { encodePng } from './core/thumbs.js';
 import { upscalerStatus, installUpscaler } from './core/tools.js';
-import { openMapSource, retextureMap, mapperState, rememberMap, browseMaps } from './core/mapsrc.js';
+import { openMapSource, applyFaceEdits, undoRedo, mapperState, rememberMap, browseMaps } from './core/mapsrc.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const UI_DIR = path.join(ROOT, 'ui');
@@ -313,7 +313,7 @@ async function handleApi(req, url, res) {
           return json(res, 400, { error: 'could not read map: ' + e.message });
         }
       }
-      case '/api/mapsrc/retexture': {
+      case '/api/mapsrc/edit': {
         if (!body.path || !Array.isArray(body.changes) || !body.changes.length) {
           return json(res, 400, { error: 'need path and changes[]' });
         }
@@ -323,11 +323,32 @@ async function handleApi(req, url, res) {
           const targets = [...new Set(body.changes.map(c => String(c.to || '')))].filter(Boolean);
           const missingTargets = targets.filter(t =>
             !inst.fs.findFirst('textures/' + t, ['.wal', '.png', '.tga', '.jpg', '.pcx']));
-          const r = retextureMap(inst, body.path, body.changes.map(c => ({ face: Number(c.face), to: String(c.to) })), { keepSize: body.keepSize !== false });
+          const changes = body.changes.map(c => ({
+            face: Number(c.face),
+            to: c.to ? String(c.to) : undefined,
+            setSurf: Number(c.setSurf) || 0,
+            clearSurf: Number(c.clearSurf) || 0,
+            setCont: Number(c.setCont) || 0,
+            clearCont: Number(c.clearCont) || 0,
+            value: c.value !== undefined && c.value !== null && c.value !== '' ? Number(c.value) : undefined,
+            clearExtra: Boolean(c.clearExtra),
+          }));
+          const r = applyFaceEdits(inst, body.path, changes, { keepSize: body.keepSize !== false });
           const payload = openMapSource(inst, body.path);
           return json(res, 200, { ok: true, ...r, missingTargets, payload });
         } catch (e) {
-          return json(res, 400, { error: 'retexture failed: ' + e.message });
+          return json(res, 400, { error: 'edit failed: ' + e.message });
+        }
+      }
+      case '/api/mapsrc/undo':
+      case '/api/mapsrc/redo': {
+        if (!body.path) return json(res, 400, { error: 'need path' });
+        try {
+          const r = undoRedo(inst, body.path, url.pathname.endsWith('redo'));
+          const payload = openMapSource(inst, body.path);
+          return json(res, 200, { ok: true, ...r, payload });
+        } catch (e) {
+          return json(res, 400, { error: 'undo failed: ' + e.message });
         }
       }
       case '/api/import': {

@@ -228,6 +228,8 @@
       <span id="mpFile" class="mono up-map" title=""></span>
       <span id="mpBadges" class="mp-badges"></span>
       <span id="mpStatus" class="mono up-status"></span>
+      <button id="mpUndo" disabled title="Undo the last change to this .map (Ctrl+Z)">↶ Undo</button>
+      <button id="mpRedo" disabled title="Redo (Ctrl+Y / Ctrl+Shift+Z)">↷ Redo</button>
       <button id="mpOpenBtn">📂 Open .map…</button>
       <button id="mpClose" title="Back to TexSwap (Esc)">✕ Close</button>
     </div>
@@ -257,11 +259,27 @@
           <label class="check" title="Hide clip/hint/trigger/origin helper textures and sky"><input type="checkbox" id="mpHideUtil"> hide utility</label>
         </div>
         <div id="mpList" class="mp-list"></div>
+        <div id="mpFlagsBox" class="mp-flags hidden">
+          <div class="mp-flagshead">
+            <b>Surface properties</b>
+            <span id="mpFlagsInfo" class="count"></span>
+          </div>
+          <div class="mp-flagscols">
+            <div id="mpSurfCol"></div>
+            <div id="mpContCol"></div>
+          </div>
+          <div class="mp-flagsrow">
+            <label title="Light radiance for faces with the light flag (SURF_LIGHT)">value <input type="number" id="mpFlagValue" min="0" step="25" placeholder="mixed"></label>
+            <button class="primary small" id="mpFlagsApply">Apply</button>
+            <button class="small" id="mpFlagsClear" title="Remove the explicit numbers from the selected faces — the compiler then uses the texture's own .wal defaults">back to texture defaults</button>
+          </div>
+          <div class="mp-flagsnote">Faces without explicit numbers inherit the texture's .wal flags — shown here as the effective state.</div>
+        </div>
       </aside>
       <div id="mpDivider" class="mp-divider" title="Drag to resize the texture panel"></div>
       <section class="mp-center">
         <canvas id="mpCanvas"></canvas>
-        <div class="mp-help">drag = look · WASD move · Q/E down/up · Shift fast · click = select face · Ctrl+click = add/remove · B = whole brush · T = same texture · Esc = clear</div>
+        <div class="mp-help">drag = look · WASD move · Q/E down/up · Shift fast · click = select face · Ctrl+click = add/remove · B = whole brush · T = same texture · Esc = clear · with a selection: click a texture tile to paint it · Ctrl+Z undo</div>
         <div class="mp-viewbar">
           <label class="check" title="Light entities as glowing markers (size follows their light value)"><input type="checkbox" id="mpLights" checked> lights</label>
           <label class="check" title="Lines from every entity to what it targets (cyan) or killtargets (red)"><input type="checkbox" id="mpLinks"> target links</label>
