@@ -5,8 +5,12 @@ import { decodeImage, imageSize } from './decoders.js';
 
 // Hi-res-first mirrors the engine's override mode; low-res-first mirrors
 // playing with world texture overrides off (original .wal/.pcx files).
-export const TEXTURE_EXTS = ['.png', '.tga', '.jpg', '.wal', '.pcx'];
-export const TEXTURE_EXTS_LOW = ['.wal', '.pcx', '.png', '.tga', '.jpg'];
+// Override order follows q2pro's r_texture_formats default "pjt": png, jpg,
+// THEN tga. Many classic packs ship a small same-res .tga next to a genuine
+// hi-res .jpg (e.g. wizardext), and the engine really does pick the .jpg -
+// preferring .tga here hid every such hi-res texture from the app.
+export const TEXTURE_EXTS = ['.png', '.jpg', '.tga', '.wal', '.pcx'];
+export const TEXTURE_EXTS_LOW = ['.wal', '.pcx', '.png', '.jpg', '.tga'];
 
 export function resolveImage(gameFs, basePath, exts = TEXTURE_EXTS) {
   for (const ext of exts) {

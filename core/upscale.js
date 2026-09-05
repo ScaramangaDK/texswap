@@ -174,12 +174,24 @@ export class TextureUpscaler {
     return FACTORS.find(f => f <= wanted && side * f <= MAX_GAME_TEX) || 0;
   }
 
-  #keyFor(name, factor, src, model = 'detail', grain = 0) {
-    const b = this.#sourceBytes(name, src);
-    if (!b) return null;
-    const hash = crypto.createHash('sha1').update(b.buf).digest('hex').slice(0, 16);
+  #keyWith(name, factor, exts, model, grain) {
+    const hit = resolveImage(this.install.fs, 'textures/' + name, exts);
+    if (!hit) return null;
+    const hash = crypto.createHash('sha1').update(this.install.fs.read(hit.path)).digest('hex').slice(0, 16);
     const g = cleanGrain(grain);
-    return { key: `${hash}-x${factor}-${recipe(factor)}${model === 'smooth' ? '-s2' : ''}${g ? '-g' + g : ''}`, ext: b.ext };
+    return { key: `${hash}-x${factor}-${recipe(factor)}${model === 'smooth' ? '-s2' : ''}${g ? '-g' + g : ''}`, ext: hit.ext };
+  }
+
+  #keyFor(name, factor, src, model = 'detail', grain = 0) {
+    return this.#keyWith(name, factor, this.#exts(src), model, grain);
+  }
+
+  // Before the engine-order fix, 'auto' preferred .tga over .jpg; upscales
+  // made back then hashed that other source file. Their cache (and thereby
+  // gen/link names) stays valid through this order until the user redoes
+  // the texture, so updating the app never drops a working upscale.
+  #legacyKey(name, factor, model, grain) {
+    return this.#keyWith(name, factor, ['.png', '.tga', '.jpg', '.wal', '.pcx'], model, grain);
   }
 
   // Absolute path of the cached upscale for a texture, or null.
@@ -187,7 +199,15 @@ export class TextureUpscaler {
     const k = this.#keyFor(name, factor, src, model, grain);
     if (!k) return null;
     const f = path.join(cacheDir(), k.key + '.png');
-    return fs.existsSync(f) ? f : null;
+    if (fs.existsSync(f)) return f;
+    if (src !== 'low') {
+      const lk = this.#legacyKey(name, factor, model, grain);
+      if (lk && lk.key !== k.key) {
+        const lf = path.join(cacheDir(), lk.key + '.png');
+        if (fs.existsSync(lf)) return lf;
+      }
+    }
+    return null;
   }
 
   // Which textures of a map would be upscaled, and why the rest would not.
@@ -299,8 +319,16 @@ export class TextureUpscaler {
         for (const [name, spec] of Object.entries(swaps)) {
           if (!spec || spec.type !== 'upscale') continue;
           const f = [2, 3, 4].includes(Number(spec.factor)) ? Number(spec.factor) : 4;
-          const k = this.#keyFor(name, f, spec.src === 'low' ? 'low' : 'auto', spec.model === 'smooth' ? 'smooth' : 'detail', cleanGrain(spec.grain));
+          const src = spec.src === 'low' ? 'low' : 'auto';
+          const model = spec.model === 'smooth' ? 'smooth' : 'detail';
+          const grain = cleanGrain(spec.grain);
+          const k = this.#keyFor(name, f, src, model, grain);
           if (k) keep.add(k.key + '.png');
+          if (src !== 'low') {
+            // pre-order-fix upscales live under the legacy source's hash
+            const lk = this.#legacyKey(name, f, model, grain);
+            if (lk) keep.add(lk.key + '.png');
+          }
         }
       }
     }

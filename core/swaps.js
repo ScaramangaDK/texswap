@@ -134,6 +134,9 @@ export class SwapStore {
   // files (only the wal shrinks, carrying the tiling grid), so hi-res mode
   // (r_texture_overrides 31) stays sharp at dense tiling. v4: gen wals carry
   // transparency as palette index 255, so alphatest swaps work in wal mode.
+  // v5: hi-res resolution order fixed to the engine's r_texture_formats
+  // "pjt" (png, jpg, tga) - gen files transcoded from a tga-beats-jpg source
+  // regenerate from the file the engine actually serves.
   // v1.5 -> this build: the weapon Skin studio is gone. Its game-side files and
   // the inline skin link lines are dropped once per install (flag persisted).
   dropLegacySkins() {
@@ -146,8 +149,8 @@ export class SwapStore {
   }
 
   #migrateGridSemantics() {
-    if (this.data.gridSemantics === 4) return;
-    this.data.gridSemantics = 4;
+    if (this.data.gridSemantics === 5) return;
+    this.data.gridSemantics = 5;
     try { this.#saveJson(); } catch { /* saved on next action */ }
     // gen/ is purely derived data; wipe it so every file regenerates under
     // the new rules (also clears stale experiment-era -g<w>x<h> files)
@@ -585,7 +588,8 @@ export class SwapStore {
 
   // Which extensions can the engine request for this texture? Depends on the
   // player's r_override_textures / r_texture_overrides settings: hi-res mode
-  // asks .png/.tga/.jpg first, low-res mode asks the original .wal directly.
+  // asks .png/.jpg/.tga (r_texture_formats order, default "pjt") first,
+  // low-res mode asks the original .wal directly.
   // Cover both: shadow every existing real variant, plus canonical .png
   // (hi-res) and .wal (low-res) so the swap works at any setting.
   // (.pcx-only sources aren't shadowed in low-res mode — rare, v1 limitation.)
