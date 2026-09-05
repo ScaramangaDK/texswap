@@ -22,6 +22,10 @@
       <button id="aboutBtn" class="sidelogo" title="About TexSwap">
         <img src="texswaplogo-ui.png" alt="TexSwap">
       </button>
+      <div class="sidetabs">
+        <button id="sideTabMaps" class="active" title="Swap textures on compiled maps — the player side">🎮 Maps</button>
+        <button id="sideTabMapper" title="Mapper's Edition — inspect and retexture uncompiled .map sources before compiling">🔨 Mapper</button>
+      </div>
       <div class="sidehead">
         <input id="mapSearch" type="search" placeholder="Search maps…">
       </div>
@@ -218,7 +222,57 @@
     </div>
   </div>
 
+  <div id="mapperOverlay" class="hidden">
+    <div class="up-top">
+      <span class="up-title">🔨 Mapper's Edition</span>
+      <span id="mpFile" class="mono up-map" title=""></span>
+      <span id="mpBadges" class="mp-badges"></span>
+      <span id="mpStatus" class="mono up-status"></span>
+      <button id="mpOpenBtn">📂 Open .map…</button>
+      <button id="mpClose" title="Back to TexSwap (Esc)">✕ Close</button>
+    </div>
+    <div class="mp-main">
+      <aside class="mp-side">
+        <div class="tabs mp-tabs">
+          <button id="mpTabTex" class="active">Textures</button>
+          <button id="mpTabEnt">Entities</button>
+          <button id="mpTabIssues">Issues <span id="mpIssueBadge" class="mp-issuebadge hidden"></span></button>
+        </div>
+        <input id="mpFilter" type="search" placeholder="Filter…">
+        <div id="mpList" class="mp-list"></div>
+      </aside>
+      <section class="mp-center">
+        <canvas id="mpCanvas"></canvas>
+        <div class="mp-help">drag = look · WASD move · Q/E down/up · Shift fast · click = select face · Ctrl+click = add/remove · B = whole brush · T = same texture · Esc = clear</div>
+        <div class="mp-viewbar">
+          <label class="check" title="Light entities as glowing markers (size follows their light value)"><input type="checkbox" id="mpLights" checked> lights</label>
+          <label class="check" title="Lines from every entity to what it targets (cyan) or killtargets (red)"><input type="checkbox" id="mpLinks"> target links</label>
+          <label class="check" title="Show clip/hint/trigger/nodraw faces the game never draws"><input type="checkbox" id="mpUtility"> utility faces</label>
+          <span id="mpHover" class="mono mp-hover"></span>
+        </div>
+        <div id="mpSel" class="mp-sel hidden">
+          <span id="mpSelInfo" class="mono"></span>
+          <button id="mpSelBrush" class="small" title="Grow to every face of the touched brushes (B)">+ brush</button>
+          <button id="mpSelTex" class="small" title="Grow to every face sharing the selected textures (T)">+ same texture</button>
+          <button id="mpSelClear" class="small" title="Clear the selection (Esc)">clear</button>
+          <label class="check" title="When the replacement's grid differs, face scale and offsets are rewritten so the texture keeps its world size and alignment on the walls"><input type="checkbox" id="mpKeepSize" checked> keep size on walls</label>
+          <button id="mpRetex" class="primary">🎨 Retexture…</button>
+        </div>
+        <div id="mpEntCard" class="mp-entcard hidden"></div>
+        <div id="mpEmpty" class="mp-empty">
+          <div class="mp-emptybox">
+            <p>🔨 <b>Mapper's Edition</b></p>
+            <p class="mp-emptytext">Open an uncompiled <span class="mono">.map</span> source (TrenchBroom or Radiant, Quake 2 / Valve220 format) and see it with your install's real textures — fly through it, click faces, grow the selection to brushes or whole textures, and retexture in bulk <i>before</i> compiling. Writes touch only the texture fields; the rest of your file survives byte for byte, with a backup next to it.</p>
+            <button class="primary" id="mpOpenBtn2">📂 Open .map…</button>
+            <div id="mpRecents" class="mp-recents"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
   <script src="main.js"></script>
   <script type="module" src="viewer.js"></script>
+  <script type="module" src="mapper.js"></script>
 </body>
 </html>

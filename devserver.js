@@ -9,6 +9,7 @@ import { getInstall, setModChoice, readLastDir, saveLastDir } from './core/scann
 import { flatImage, parseColor } from './core/gen.js';
 import { encodePng } from './core/thumbs.js';
 import { upscalerStatus, installUpscaler } from './core/tools.js';
+import { openMapSource, retextureMap, mapperState, rememberMap, browseMaps } from './core/mapsrc.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const UI_DIR = path.join(ROOT, 'ui');
@@ -286,6 +287,35 @@ async function handleApi(req, url, res) {
         installUpscaler();
         return json(res, 200, { ok: true, tool: upscalerStatus() });
       }
+      // ---- Mapper tab: uncompiled .map sources ----
+      case '/api/mapsrc/open': {
+        if (!body.path || !/\.map$/i.test(body.path)) return json(res, 400, { error: 'need a .map path' });
+        if (!fs.existsSync(body.path)) return json(res, 400, { error: 'file not found: ' + body.path });
+        try {
+          const payload = openMapSource(inst, body.path);
+          const st = rememberMap(body.path);
+          return json(res, 200, { ok: true, payload, recents: st.recents || [] });
+        } catch (e) {
+          return json(res, 400, { error: 'could not read map: ' + e.message });
+        }
+      }
+      case '/api/mapsrc/retexture': {
+        if (!body.path || !Array.isArray(body.changes) || !body.changes.length) {
+          return json(res, 400, { error: 'need path and changes[]' });
+        }
+        try {
+          // targets missing from the install are allowed (a pack may be on
+          // its way) but reported, so the UI can say so
+          const targets = [...new Set(body.changes.map(c => String(c.to || '')))].filter(Boolean);
+          const missingTargets = targets.filter(t =>
+            !inst.fs.findFirst('textures/' + t, ['.wal', '.png', '.tga', '.jpg', '.pcx']));
+          const r = retextureMap(inst, body.path, body.changes.map(c => ({ face: Number(c.face), to: String(c.to) })), { keepSize: body.keepSize !== false });
+          const payload = openMapSource(inst, body.path);
+          return json(res, 200, { ok: true, ...r, missingTargets, payload });
+        } catch (e) {
+          return json(res, 400, { error: 'retexture failed: ' + e.message });
+        }
+      }
       case '/api/import': {
         if (body.data && body.data.kind === 'skin') return json(res, 400, { error: 'weapon skin files (.aq2skin.json) are not supported in this version' });
         const result = body.data && body.data.kind === 'pack'
@@ -389,6 +419,17 @@ async function handleApi(req, url, res) {
 
     case '/api/textures':
       return json(res, 200, { textures: getInstall(dir).listTextures() });
+
+    case '/api/mapsrc/state':
+      return json(res, 200, mapperState());
+
+    case '/api/mapsrc/browse': {
+      try {
+        return json(res, 200, browseMaps(q.get('path') || null));
+      } catch (e) {
+        return json(res, 400, { error: 'cannot open folder: ' + e.message });
+      }
+    }
 
     case '/api/skies':
       return json(res, 200, { skies: getInstall(dir).listSkies() });
