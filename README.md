@@ -5,6 +5,12 @@
 <h3 align="center"><a href="https://github.com/ScaramangaDK/texswap/releases/latest">⬇️&nbsp;Download TexSwap for Windows</a></h3>
 <p align="center"><i>Unzip, run <code>TexSwap.exe</code>, point it at your AQ2/AQtion folder — done.</i></p>
 
+<p align="center">
+  <a href="https://youtu.be/x-i4fUP_Esg"><img src="https://img.youtube.com/vi/x-i4fUP_Esg/maxresdefault.jpg" alt="TexSwap trailer" width="560"></a>
+  <br>
+  <b><a href="https://youtu.be/x-i4fUP_Esg">▶&nbsp;Watch the trailer</a></b>
+</p>
+
 ---
 
 Restyle **Action Quake 2 / AQtion** map textures for gameplay and visibility:
