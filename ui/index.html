@@ -232,15 +232,33 @@
       <button id="mpClose" title="Back to TexSwap (Esc)">✕ Close</button>
     </div>
     <div class="mp-main">
-      <aside class="mp-side">
+      <aside class="mp-side" id="mpSide">
         <div class="tabs mp-tabs">
           <button id="mpTabTex" class="active">Textures</button>
           <button id="mpTabEnt">Entities</button>
           <button id="mpTabIssues">Issues <span id="mpIssueBadge" class="mp-issuebadge hidden"></span></button>
         </div>
-        <input id="mpFilter" type="search" placeholder="Filter…">
+        <input id="mpFilter" type="search" placeholder="Search… (several words = all must match)">
+        <div class="mp-texctl" id="mpTexCtl">
+          <select id="mpSort" title="Order of the texture grid">
+            <option value="area">Sort: most visible</option>
+            <option value="faces">Sort: most faces</option>
+            <option value="name">Sort: name</option>
+            <option value="folder">Group: by folder</option>
+          </select>
+          <select id="mpTileSize" title="Texture tile size — drag the panel edge to fit more per row">
+            <option value="56">Tiny tiles</option>
+            <option value="72">Small tiles</option>
+            <option value="96" selected>Medium tiles</option>
+            <option value="128">Large tiles</option>
+            <option value="168">Huge tiles</option>
+          </select>
+          <label class="check" title="Only textures with no file anywhere in the install"><input type="checkbox" id="mpOnlyMissing"> missing only</label>
+          <label class="check" title="Hide clip/hint/trigger/origin helper textures and sky"><input type="checkbox" id="mpHideUtil"> hide utility</label>
+        </div>
         <div id="mpList" class="mp-list"></div>
       </aside>
+      <div id="mpDivider" class="mp-divider" title="Drag to resize the texture panel"></div>
       <section class="mp-center">
         <canvas id="mpCanvas"></canvas>
         <div class="mp-help">drag = look · WASD move · Q/E down/up · Shift fast · click = select face · Ctrl+click = add/remove · B = whole brush · T = same texture · Esc = clear</div>

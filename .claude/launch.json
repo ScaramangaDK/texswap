@@ -11,6 +11,21 @@
       ],
       "port": 5893,
       "autoPort": false
+    },
+    {
+      "name": "texswap-fake",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "devserver.js",
+        "--port",
+        "5894",
+        "--appdata",
+        ".devappdata",
+        "--only",
+        ".devfake"
+      ],
+      "port": 5894,
+      "autoPort": false
     }
   ]
 }

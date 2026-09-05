@@ -4,3 +4,5 @@ dist/
 releases/
 trailer/
 __pycache__/
+.devfake/
+.devappdata/

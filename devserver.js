@@ -18,9 +18,22 @@ const APP_VERSION = (() => {
   catch { return ''; }
 })();
 // --port N lets a second copy run next to the packaged app (which owns 5892)
-const argPort = (() => { const i = process.argv.indexOf('--port'); return i > 0 ? process.argv[i + 1] : null; })();
-const PORT = Number(argPort || process.env.PORT || 5892);
-const DEFAULT_DIR = 'C:\\AQ2mapping\\AQ2';
+const argOf = name => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
+const PORT = Number(argOf('--port') || process.env.PORT || 5892);
+// Sandbox flags for safe dev testing: --appdata <dir> keeps every presets/
+// cache write in an isolated store, and --only <dir> refuses to open any
+// install outside that path — so a test server can NEVER touch (or heal)
+// a real install's texswap state with sandbox data.
+const argAppdata = argOf('--appdata');
+if (argAppdata) process.env.APPDATA = path.resolve(argAppdata);
+const ONLY_DIR = argOf('--only') ? path.resolve(argOf('--only')).toLowerCase() : null;
+const DEFAULT_DIR = ONLY_DIR || 'C:\\AQ2mapping\\AQ2';
+function guardDir(dir) {
+  if (ONLY_DIR && !path.resolve(dir || DEFAULT_DIR).toLowerCase().startsWith(ONLY_DIR)) {
+    throw new Error(`sandboxed dev server: only ${ONLY_DIR} is allowed`);
+  }
+  return dir;
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -104,6 +117,7 @@ async function handleApi(req, url, res) {
 
   if (req.method === 'POST') {
     const body = await readBody(req);
+    guardDir(body.dir);
     const inst = getInstall(body.dir || DEFAULT_DIR);
     const lowRes = body.res === 'low';
     switch (url.pathname) {
@@ -329,6 +343,7 @@ async function handleApi(req, url, res) {
   }
 
   const dir = q.get('dir') || DEFAULT_DIR;
+  guardDir(dir);
   switch (url.pathname) {
     case '/api/defaults': {
       const last = readLastDir();

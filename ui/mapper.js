@@ -617,32 +617,69 @@ function renderPanel() {
 
   if (M.tab === 'tex') {
     const selTex = new Set([...M.sel].map(id => M.facesById.get(id).tex));
-    for (const t of M.payload.textures) {
-      if (q && !t.name.toLowerCase().includes(q)) continue;
-      const row = document.createElement('button');
-      row.className = 'mp-row' + (selTex.has(t.name) ? ' sel' : '');
+    const sort = $('mpSort').value;
+    const tile = Number($('mpTileSize').value) || 96;
+    const terms = q.split(/\s+/).filter(Boolean);
+    let items = M.payload.textures.filter(t =>
+      (!terms.length || terms.every(w => t.name.toLowerCase().includes(w)))
+      && (!$('mpOnlyMissing').checked || t.missing)
+      && (!$('mpHideUtil').checked || (!t.utility && !t.sky)));
+    if (sort === 'name' || sort === 'folder') items = [...items].sort((a, b) => a.name.localeCompare(b.name, 'en'));
+    else if (sort === 'faces') items = [...items].sort((a, b) => b.faces - a.faces || b.area - a.area);
+    // 'area' keeps the payload's most-visible-first order
+
+    const grid = document.createElement('div');
+    grid.className = 'mp-texgrid';
+    grid.style.setProperty('--mp-tile', tile + 'px');
+    const thumbSize = tile <= 72 ? 64 : tile <= 128 ? 128 : 256;
+    let lastFolder = null;
+    for (const t of items) {
+      if (sort === 'folder') {
+        const folder = t.name.includes('/') ? t.name.slice(0, t.name.lastIndexOf('/')) : '(no folder)';
+        if (folder !== lastFolder) {
+          lastFolder = folder;
+          const head = document.createElement('div');
+          head.className = 'mp-texfold';
+          const n = items.filter(x => (x.name.includes('/') ? x.name.slice(0, x.name.lastIndexOf('/')) : '(no folder)') === folder).length;
+          head.innerHTML = `${folder} <span class="count">· ${n}</span>`;
+          grid.appendChild(head);
+        }
+      }
+      const cell = document.createElement('button');
+      cell.className = 'mp-tile' + (selTex.has(t.name) ? ' sel' : '');
       const img = document.createElement('img');
       img.loading = 'lazy';
-      img.src = AQTS().thumbUrl({ tex: t.name, size: 64 });
-      const main = document.createElement('div');
-      main.className = 'mp-rowmain';
-      const meta = [];
-      if (t.areaPct) meta.push(t.areaPct + '% of the map');
-      meta.push(`${t.faces} face${t.faces === 1 ? '' : 's'}`);
-      if (t.w) meta.push(`${t.w}×${t.h}`);
-      main.innerHTML = `<div class="mp-rowname" title="${t.name}">${t.name}</div>
-        <div class="mp-rowmeta">${meta.join(' · ')}${t.utility ? ' · utility' : ''}${t.sky ? ' · sky' : ''}</div>`;
-      row.appendChild(img);
-      row.appendChild(main);
+      img.src = AQTS().thumbUrl({ tex: t.name, size: thumbSize });
+      const name = document.createElement('div');
+      name.className = 'mp-tilename';
+      name.textContent = t.name.includes('/') && sort === 'folder' ? t.name.slice(t.name.lastIndexOf('/') + 1) : t.name;
+      const meta = document.createElement('div');
+      meta.className = 'mp-tilemeta';
+      const bits = [];
+      if (t.areaPct) bits.push(t.areaPct + '%');
+      bits.push(t.faces + 'f');
+      if (t.w) bits.push(`${t.w}×${t.h}`);
+      if (t.utility) bits.push('util');
+      if (t.sky) bits.push('sky');
+      meta.textContent = bits.join(' · ');
+      cell.title = `${t.name}\n${t.faces} faces · ${t.brushes} brushes${t.areaPct ? ` · ${t.areaPct}% of the visible map` : ''}${t.w ? `\n${t.w}×${t.h}` : ''}${t.missing ? '\nNOT FOUND in the install' : ''}\nclick = select its faces · Ctrl+click = add`;
+      cell.append(img, name, meta);
       if (t.missing) {
         const b = document.createElement('span');
-        b.className = 'warnbadge';
+        b.className = 'mp-tilemiss';
         b.textContent = 'missing';
-        b.title = 'No file for this texture anywhere in the install';
-        row.appendChild(b);
+        cell.appendChild(b);
       }
-      row.addEventListener('click', e => selectTexture(t.name, e.ctrlKey));
-      list.appendChild(row);
+      cell.addEventListener('click', e => selectTexture(t.name, e.ctrlKey));
+      grid.appendChild(cell);
+    }
+    list.appendChild(grid);
+    if (!items.length) {
+      const d = document.createElement('div');
+      d.className = 'count';
+      d.style.padding = '12px';
+      d.textContent = 'no textures match';
+      list.appendChild(d);
     }
   } else if (M.tab === 'ent') {
     const byCls = new Map();
@@ -821,6 +858,60 @@ function bind() {
   });
   $('mpKeepSize').checked = localStorage.getItem('aq2ts.mpKeepSize') !== '0';
   $('mpKeepSize').addEventListener('change', () => localStorage.setItem('aq2ts.mpKeepSize', $('mpKeepSize').checked ? '1' : '0'));
+
+  // texture-grid controls, persisted
+  const persist = (id, key, def) => {
+    const el = $(id);
+    const saved = localStorage.getItem(key);
+    if (el.type === 'checkbox') {
+      el.checked = saved === '1';
+      el.addEventListener('change', () => { localStorage.setItem(key, el.checked ? '1' : '0'); renderPanel(); });
+    } else {
+      if (saved !== null && [...el.options].some(o => o.value === saved)) el.value = saved;
+      else if (def) el.value = def;
+      el.addEventListener('change', () => { localStorage.setItem(key, el.value); renderPanel(); });
+    }
+  };
+  persist('mpSort', 'aq2ts.mpSort', 'area');
+  persist('mpTileSize', 'aq2ts.mpTile', '96');
+  persist('mpOnlyMissing', 'aq2ts.mpOnlyMiss');
+  persist('mpHideUtil', 'aq2ts.mpHideUtil');
+
+  // draggable divider: panel width vs 3D view, persisted
+  const side = $('mpSide');
+  // a hidden window reports innerWidth 0 (background loads) - never let
+  // that collapse the width clamp
+  const maxW = () => Math.max(360, window.innerWidth * 0.7 || 9999);
+  const savedW = Number(localStorage.getItem('aq2ts.mpPanelW'));
+  if (savedW >= 240) side.style.width = Math.min(savedW, maxW()) + 'px';
+  const divider = $('mpDivider');
+  divider.addEventListener('mousedown', e => {
+    e.preventDefault();
+    divider.classList.add('dragging');
+    const startX = e.clientX;
+    const startW = side.getBoundingClientRect().width;
+    let raf = 0;
+    const onMove = ev => {
+      const w = Math.max(240, Math.min(maxW(), startW + (ev.clientX - startX)));
+      side.style.width = w + 'px';
+      // the canvas resize is the heavy part; batch it per frame
+      if (!raf) {
+        raf = requestAnimationFrame(() => {
+          raf = 0;
+          if (M.three) M.three.onResize();
+        });
+      }
+    };
+    const onUp = () => {
+      divider.classList.remove('dragging');
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      localStorage.setItem('aq2ts.mpPanelW', String(Math.round(side.getBoundingClientRect().width)));
+      if (M.three) M.three.onResize();
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  });
 }
 
 function switchTab(tab) {
@@ -828,6 +919,7 @@ function switchTab(tab) {
   $('mpTabTex').classList.toggle('active', tab === 'tex');
   $('mpTabEnt').classList.toggle('active', tab === 'ent');
   $('mpTabIssues').classList.toggle('active', tab === 'issues');
+  $('mpTexCtl').classList.toggle('hidden', tab !== 'tex');
   renderPanel();
 }
 
