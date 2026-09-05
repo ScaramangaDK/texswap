@@ -1,4 +1,11 @@
-# TexSwap
+<p align="center">
+  <img src="ui/texswaplogo-splash.png" alt="TexSwap" width="520">
+</p>
+
+<h3 align="center"><a href="https://github.com/ScaramangaDK/texswap/releases/latest">⬇️&nbsp;Download TexSwap for Windows</a></h3>
+<p align="center"><i>Unzip, run <code>TexSwap.exe</code>, point it at your AQ2/AQtion folder — done.</i></p>
+
+---
 
 Restyle **Action Quake 2 / AQtion** map textures for gameplay and visibility:
 browse every texture a map uses, swap it for a stock texture, a flat
@@ -11,7 +18,7 @@ Nothing in your game install is ever modified: everything lives in one
 `texswap/` folder plus a single line in `autoexec.cfg`, and "Reset map"
 takes any map back to stock.
 
-## Download
+## Install
 
 **[Get the latest version](https://github.com/ScaramangaDK/texswap/releases/latest)** — `TexSwap-win64.zip`
 
