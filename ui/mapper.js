@@ -13,7 +13,6 @@ const M = {
   recents: [],
   catalog: null,
   catalogDir: null,
-  tab: 'tex',
   sel: new Set(),        // face ids
   faceIndex: null,       // id -> { group, range, tri positions offset }
   facesById: null,       // id -> payload.faces entry
@@ -186,9 +185,8 @@ function setPayload(payload, keepCamera = false, keepSel = false) {
   $('mpBadges').innerHTML = badges.join('');
   const s = payload.stats;
   $('mpStatus').textContent = `${s.brushes} brushes · ${s.faces} faces · ${s.entities} entities · ${s.textures} textures`;
-  const errs = payload.issues.filter(i => i.level !== 'info').length;
-  $('mpIssueBadge').classList.toggle('hidden', !errs);
-  $('mpIssueBadge').textContent = errs;
+  $('mpNotes').classList.toggle('hidden', !payload.issues.length);
+  $('mpNotesCount').textContent = payload.issues.length;
   updateHistoryButtons();
   buildScene();
   if (M.sel.size) rebuildSelMesh();
@@ -570,7 +568,41 @@ function selChanged() {
   rebuildSelMesh();
   updateSelUI();
   renderFlagsBox();
-  if (M.tab === 'tex') renderPanel(); // sync tile highlights + paint hints
+  renderPanel(); // sync tile highlights + paint hints
+}
+
+// ---------- map notes (the old Issues tab, boiled down to a card) ----------
+function showNotes() {
+  const card = $('mpEntCard');
+  if (!card.classList.contains('hidden') && card.dataset.mode === 'notes') {
+    card.classList.add('hidden');
+    return;
+  }
+  const parts = [];
+  for (const i of M.payload.issues) {
+    const icon = i.level === 'error' ? '⛔' : i.level === 'warn' ? '⚠️' : 'ℹ️';
+    let extra = '';
+    if (i.textures) extra = `<div style="margin-top:4px"><button class="small" data-seltex="${i.textures.join('|').replace(/"/g, '&quot;')}">select those faces</button></div>`;
+    if (i.ent !== undefined && M.entsByIdx.get(i.ent)) extra = `<div style="margin-top:4px"><button class="small" data-flyto="${i.ent}">fly to it</button></div>`;
+    const tip = (i.sounds || i.textures || []).join(', ');
+    parts.push(`<div class="mp-issue ${i.level}" ${tip ? `title="${tip.replace(/"/g, '&quot;')}"` : ''}><b>${icon} ${i.kind}</b><br>${i.msg}${extra}</div>`);
+  }
+  card.innerHTML = `<h4>Map notes <span class="count">· ${M.payload.issues.length}</span></h4>
+    ${parts.join('') || '<div class="count">✓ nothing to report</div>'}
+    <div style="margin-top:8px"><button class="small" id="mpEntCardClose">✕ close</button></div>`;
+  card.dataset.mode = 'notes';
+  card.classList.remove('hidden');
+  $('mpEntCardClose').addEventListener('click', () => card.classList.add('hidden'));
+  card.querySelectorAll('[data-seltex]').forEach(b => b.addEventListener('click', () => {
+    const texes = b.dataset.seltex.split('|');
+    M.sel = new Set();
+    for (const f of M.payload.faces) if (texes.includes(f.tex)) M.sel.add(f.id);
+    selChanged();
+  }));
+  card.querySelectorAll('[data-flyto]').forEach(b => b.addEventListener('click', () => {
+    const e = M.entsByIdx.get(Number(b.dataset.flyto));
+    if (e) flyTo(e);
+  }));
 }
 
 // ---------- surface / content properties (bottom of the panel) ----------
@@ -751,6 +783,7 @@ function showEntCard(ent) {
     <h4>${ent.classname} <span class="count">· entity ${ent.idx} · line ${ent.line}</span></h4>
     <table>${rows}</table>
     <div style="margin-top:8px"><button class="small" id="mpEntCardClose">✕ close</button></div>`;
+  card.dataset.mode = 'ent';
   card.classList.remove('hidden');
   $('mpEntCardClose').addEventListener('click', () => card.classList.add('hidden'));
 }
@@ -762,7 +795,7 @@ function renderPanel() {
   const q = $('mpFilter').value.trim().toLowerCase();
   if (!M.payload) return;
 
-  if (M.tab === 'tex') {
+  {
     const selTex = new Set([...M.sel].map(id => M.facesById.get(id).tex));
     const sort = $('mpSort').value;
     const tile = Number($('mpTileSize').value) || 96;
@@ -796,8 +829,13 @@ function renderPanel() {
       cell.className = 'mp-tile' + (selTex.has(t.name) ? ' sel' : '');
       const imgbox = document.createElement('div');
       imgbox.className = 'mp-tileimg';
+      // square is guaranteed inline: an older cached style.css (Electron
+      // keeps its HTTP cache across updates) must never turn tiles into
+      // strips again
+      imgbox.style.cssText = 'position:relative;width:100%;padding-top:100%;border-radius:4px;overflow:hidden';
       const img = document.createElement('img');
       img.loading = 'lazy';
+      img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover';
       img.src = AQTS().thumbUrl({ tex: t.name, size: thumbSize });
       imgbox.appendChild(img);
       const name = document.createElement('div');
@@ -836,116 +874,6 @@ function renderPanel() {
       d.className = 'count';
       d.style.padding = '12px';
       d.textContent = 'no textures match';
-      list.appendChild(d);
-    }
-  } else if (M.tab === 'ent') {
-    // search matches the classname OR any key/value (find "shiplog" or a
-    // sound file, not just class names); groups collapse to stay readable
-    const terms = q.split(/\s+/).filter(Boolean);
-    const entMatch = e => !terms.length || terms.every(w =>
-      e.classname.toLowerCase().includes(w) ||
-      Object.entries(e.props).some(([k, v]) => k.toLowerCase().includes(w) || String(v).toLowerCase().includes(w)));
-    const byCls = new Map();
-    for (const e of M.payload.ents) {
-      if (!entMatch(e)) continue;
-      if (!byCls.has(e.classname)) byCls.set(e.classname, []);
-      byCls.get(e.classname).push(e);
-    }
-    if (!M.entOpen) M.entOpen = new Set();
-    const classes = [...byCls.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
-    const colorChip = e => {
-      const c = (e.props._color || '').trim().split(/\s+/).map(parseFloat);
-      if (c.length !== 3 || c.some(v => !Number.isFinite(v))) return '';
-      const mx = Math.max(...c) > 1.001 ? 255 : 1;
-      const rgb = c.map(v => Math.round(v / mx * 255));
-      return `<span class="mp-lightchip" style="background:rgb(${rgb.join(',')})"></span> `;
-    };
-    const summarize = e => {
-      const bits = [];
-      if (e.classname === 'light') bits.push(colorChip(e) + (e.props.light || e.props._light || '300'));
-      if (e.props.noise) bits.push('🔊 ' + e.props.noise);
-      if (e.props.model) bits.push(e.props.model);
-      if (e.props.message) bits.push('“' + String(e.props.message).slice(0, 26) + '”');
-      if (e.brushes) bits.push(e.brushes + ' brush' + (e.brushes === 1 ? '' : 'es'));
-      if (e.targetname) bits.push('named ' + e.targetname);
-      if (e.target) bits.push('→ ' + e.target);
-      if (!bits.length && e.origin) bits.push(e.origin.join(' '));
-      return bits.join(' · ') || '—';
-    };
-    for (const [cls, ents] of classes) {
-      const open = M.entOpen.has(cls) || terms.length > 0;
-      const head = document.createElement('button');
-      head.className = 'mp-entgroup';
-      head.innerHTML = `<span class="caret">${open ? '▾' : '▸'}</span> ${cls} <span class="count">${ents.length}</span>`;
-      head.addEventListener('click', () => {
-        if (M.entOpen.has(cls)) M.entOpen.delete(cls); else M.entOpen.add(cls);
-        renderPanel();
-      });
-      list.appendChild(head);
-      if (!open) continue;
-      for (const e of ents.slice(0, 120)) {
-        const row = document.createElement('button');
-        row.className = 'mp-row';
-        row.title = 'fly to it';
-        row.innerHTML = `<div class="mp-rowmain"><div class="mp-rowname">#${e.idx} <span class="mp-entmeta">line ${e.line}</span></div>
-          <div class="mp-rowmeta">${summarize(e)}</div></div>`;
-        row.addEventListener('click', () => flyTo(e));
-        list.appendChild(row);
-      }
-      if (ents.length > 120) {
-        const d = document.createElement('div');
-        d.className = 'count';
-        d.style.padding = '2px 8px';
-        d.textContent = `…and ${ents.length - 120} more — narrow the search`;
-        list.appendChild(d);
-      }
-    }
-    if (!classes.length) {
-      const d = document.createElement('div');
-      d.className = 'count';
-      d.style.padding = '12px';
-      d.textContent = 'no entities match';
-      list.appendChild(d);
-    }
-  } else {
-    for (const i of M.payload.issues) {
-      if (q && !(i.msg.toLowerCase().includes(q) || i.kind.includes(q))) continue;
-      const d = document.createElement('div');
-      d.className = 'mp-issue ' + i.level;
-      d.innerHTML = `<b>${i.level === 'error' ? '⛔' : i.level === 'warn' ? '⚠️' : 'ℹ️'} ${i.kind}</b><br>${i.msg}`;
-      if (i.textures) {
-        const act = document.createElement('div');
-        act.className = 'mp-issueact';
-        const b = document.createElement('button');
-        b.className = 'small';
-        b.textContent = 'select those faces';
-        b.addEventListener('click', () => {
-          M.sel = new Set();
-          for (const f of M.payload.faces) if (i.textures.includes(f.tex)) M.sel.add(f.id);
-          selChanged();
-        });
-        act.appendChild(b);
-        d.appendChild(act);
-        d.title = i.textures.join(', ');
-      }
-      if (i.ent !== undefined && M.entsByIdx.get(i.ent)) {
-        const act = document.createElement('div');
-        act.className = 'mp-issueact';
-        const b = document.createElement('button');
-        b.className = 'small';
-        b.textContent = 'fly to it';
-        b.addEventListener('click', () => flyTo(M.entsByIdx.get(i.ent)));
-        act.appendChild(b);
-        d.appendChild(act);
-      }
-      if (i.sounds) d.title = i.sounds.join(', ');
-      list.appendChild(d);
-    }
-    if (!M.payload.issues.length) {
-      const d = document.createElement('div');
-      d.className = 'count';
-      d.style.padding = '12px';
-      d.textContent = '✓ nothing to report';
       list.appendChild(d);
     }
   }
@@ -1021,9 +949,7 @@ function bind() {
   $('mpClose').addEventListener('click', closeTab);
   $('mpOpenBtn').addEventListener('click', () => openBrowse());
   $('mpOpenBtn2').addEventListener('click', () => openBrowse());
-  $('mpTabTex').addEventListener('click', () => switchTab('tex'));
-  $('mpTabEnt').addEventListener('click', () => switchTab('ent'));
-  $('mpTabIssues').addEventListener('click', () => switchTab('issues'));
+  $('mpNotes').addEventListener('click', showNotes);
   $('mpFilter').addEventListener('input', renderPanel);
   $('mpSelClear').addEventListener('click', clearSel);
   $('mpSelBrush').addEventListener('click', growBrush);
@@ -1095,15 +1021,6 @@ function bind() {
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   });
-}
-
-function switchTab(tab) {
-  M.tab = tab;
-  $('mpTabTex').classList.toggle('active', tab === 'tex');
-  $('mpTabEnt').classList.toggle('active', tab === 'ent');
-  $('mpTabIssues').classList.toggle('active', tab === 'issues');
-  $('mpTexCtl').classList.toggle('hidden', tab !== 'tex');
-  renderPanel();
 }
 
 bind();

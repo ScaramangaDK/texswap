@@ -228,6 +228,7 @@
       <span id="mpFile" class="mono up-map" title=""></span>
       <span id="mpBadges" class="mp-badges"></span>
       <span id="mpStatus" class="mono up-status"></span>
+      <button id="mpNotes" class="hidden" title="Notes about this map: missing textures, sound budget, parse warnings">⚠ <span id="mpNotesCount"></span></button>
       <button id="mpUndo" disabled title="Undo the last change to this .map (Ctrl+Z)">↶ Undo</button>
       <button id="mpRedo" disabled title="Redo (Ctrl+Y / Ctrl+Shift+Z)">↷ Redo</button>
       <button id="mpOpenBtn">📂 Open .map…</button>
@@ -235,12 +236,7 @@
     </div>
     <div class="mp-main">
       <aside class="mp-side" id="mpSide">
-        <div class="tabs mp-tabs">
-          <button id="mpTabTex" class="active">Textures</button>
-          <button id="mpTabEnt">Entities</button>
-          <button id="mpTabIssues">Issues <span id="mpIssueBadge" class="mp-issuebadge hidden"></span></button>
-        </div>
-        <input id="mpFilter" type="search" placeholder="Search… (several words = all must match)">
+        <input id="mpFilter" type="search" placeholder="Search textures… (several words = all must match)" style="margin-top:10px">
         <div class="mp-texctl" id="mpTexCtl">
           <select id="mpSort" title="Order of the texture grid">
             <option value="area">Sort: most visible</option>

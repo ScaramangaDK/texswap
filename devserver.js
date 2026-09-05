@@ -104,7 +104,13 @@ const server = http.createServer(async (req, res) => {
     if (!file.startsWith(UI_DIR) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
       res.writeHead(404); return res.end('not found');
     }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' });
+    // no-cache: Electron's disk cache survives app updates, and stale UI
+    // files (an old style.css under a new index.html) break the app in
+    // ways that look like bugs - force revalidation on every load
+    res.writeHead(200, {
+      'Content-Type': MIME[path.extname(file)] || 'application/octet-stream',
+      'Cache-Control': 'no-cache',
+    });
     res.end(fs.readFileSync(file));
   } catch (e) {
     console.error(`[error] ${req.url}: ${e.message}`);
