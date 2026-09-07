@@ -1,7 +1,7 @@
 {
   "name": "aq2textureswapper",
   "productName": "TexSwap",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Restyle AQ2/AQtion maps: swap textures & skyboxes, tune lighting, share presets",
   "author": "Ralle",
   "type": "module",
@@ -23,6 +23,7 @@
       "core/**",
       "ui/**",
       "!ui/logo.png",
+      "!ui/texswapyoutube.jpeg",
       "!ui/logo2.png",
       "!ui/logo2-ui.png",
       "!ui/texswaplogo.png",
