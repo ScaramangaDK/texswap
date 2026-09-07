@@ -2295,6 +2295,21 @@ async function upRefresh() {
         upscalePoll = setTimeout(() => upRefresh(), 0);
       }
     }, 800);
+  } else if (plan.tool && plan.tool.installing) {
+    // the one-time Real-ESRGAN download is running: live progress until done
+    clearTimeout(upscalePoll);
+    upscalePoll = setTimeout(async () => {
+      if (!UP.open) return;
+      const ts = await apiGet('/api/tools/status').catch(() => null);
+      if (!UP.open) return;
+      if (ts && ts.tool && !ts.tool.installing) {
+        toast(ts.tool.installed
+          ? 'AI upscaler installed - ready to go ✓'
+          : 'Upscaler install failed: ' + (ts.tool.error || 'unknown error'), !ts.tool.installed);
+      }
+      if (ts && ts.tool) UP.plan.tool = ts.tool;
+      upRefresh(); // refreshes the panel; keeps polling while still installing
+    }, 700);
   }
 }
 
@@ -2326,9 +2341,37 @@ function upRenderSide() {
   if (plan.tooBig.length) skipped.push(`${plan.tooBig.length} over the size limit`);
   if (plan.noGrid.length) skipped.push(`<span title="${plan.noGrid.join(', ')}">${plan.noGrid.length} without a .wal (the engine would tile them denser)</span>`);
   if (skipped.length) notes.push('Left alone: ' + skipped.join(' · ') + '.');
-  if (!tool.installed) notes.push(`<span class="warn">The AI upscaler is not installed yet - open ✨ AI upscale… on a map once to download it (${tool.downloadMB} MB).</span>`);
+  if (!tool.installed) {
+    if (tool.installing) {
+      const mb = x => Math.round(x / 1048576);
+      const prog = tool.phase === 'unpacking'
+        ? 'unpacking…'
+        : tool.progress && tool.progress.total
+          ? `${mb(tool.progress.done)} / ${mb(tool.progress.total)} MB`
+          : 'starting…';
+      notes.push(`<span class="warn">⬇ Fetching the AI upscaler (Real-ESRGAN)… ${prog}</span>`);
+    } else {
+      notes.push(`<span class="warn">One-time setup: the AI upscaler (Real-ESRGAN, free and open source, ~${tool.downloadMB} MB) needs to be downloaded first.</span>`
+        + `<div style="margin-top:6px"><button class="primary" id="upInstallBtn">⬇ Install the AI upscaler</button></div>`
+        + (tool.error ? `<div class="warn" style="margin-top:4px">Last try failed: ${tool.error}</div>` : ''));
+    }
+  }
   if (busyElsewhere) notes.push(`<span class="warn">Busy upscaling ${status.map} - wait for it to finish.</span>`);
   $('upNotes').innerHTML = notes.map(n => `<div>${n}</div>`).join('');
+  const installBtn = $('upInstallBtn');
+  if (installBtn) {
+    installBtn.addEventListener('click', async () => {
+      installBtn.disabled = true;
+      try {
+        await apiPost('/api/tools/install', {});
+        toast('Downloading the AI upscaler…');
+        upRefresh();
+      } catch (e) {
+        installBtn.disabled = false;
+        toast('Install failed to start: ' + e.message, true);
+      }
+    });
+  }
 
   $('upStart').classList.toggle('hidden', running);
   $('upStart').disabled = !tool.installed || !nSel || busyElsewhere;
@@ -2428,7 +2471,7 @@ async function upscaleOne(t) {
   const grain = [25, 50, 75, 100].includes(Number(localStorage.getItem('aq2ts.upGrain'))) ? Number(localStorage.getItem('aq2ts.upGrain')) : 0;
   try {
     const st = await apiGet('/api/upscale/status');
-    if (!st.tool.installed) { toast('The AI upscaler is not installed yet - open ✨ AI upscale… on the map to download it', true); return; }
+    if (!st.tool.installed) { toast('The AI upscaler is not installed yet - open ✨ AI upscale… on the map and press "⬇ Install the AI upscaler"', true); return; }
     if (st.running) { toast(`Busy upscaling ${st.map} - try again when it finishes`, true); return; }
     if (t.swap && t.swap.type === 'upscale') await apiPost('/api/swap', { map, from: t.name, spec: null });
     const r = await apiPost('/api/upscale/map', { map, factor, minSkip: 100000, src, model, grain, names: [t.name] });
